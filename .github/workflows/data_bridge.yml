@@ -1,7 +1,7 @@
 name: data-bridge
 on:
-  push:
-    branches: [agent/data-bridge]
+  pull_request:
+    branches: [main]
   workflow_dispatch:
 
 permissions:
