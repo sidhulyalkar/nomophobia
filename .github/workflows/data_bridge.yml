@@ -1,0 +1,44 @@
+name: data-bridge
+on:
+  push:
+    branches: [agent/data-bridge]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  package-data:
+    runs-on: ubuntu-24.04
+    steps:
+      - name: Fetch public competition CSV snapshot
+        shell: bash
+        run: |
+          set -euxo pipefail
+          mkdir -p s6e8
+          base='https://raw.githubusercontent.com/s23010843/Predicting-Smartphone-Addiction/main/input'
+          curl -L --fail --retry 3 "$base/train.csv" -o s6e8/train.csv
+          curl -L --fail --retry 3 "$base/test.csv" -o s6e8/test.csv
+          curl -L --fail --retry 3 "$base/sample_submission.csv" -o s6e8/sample_submission.csv
+          wc -l s6e8/*.csv
+          sha256sum s6e8/*.csv | tee s6e8/SHA256SUMS.txt
+          python - <<'PY'
+          import pandas as pd
+          tr=pd.read_csv('s6e8/train.csv')
+          te=pd.read_csv('s6e8/test.csv')
+          ss=pd.read_csv('s6e8/sample_submission.csv')
+          assert len(tr)==691369, len(tr)
+          assert len(te)==296302, len(te)
+          assert len(ss)==296302, len(ss)
+          assert 'addicted_label' in tr.columns
+          assert list(ss.columns)==['id','addicted_label']
+          assert te['id'].equals(ss['id'])
+          print('validated', tr.shape, te.shape, ss.shape)
+          PY
+      - name: Upload competition data artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: s6e8-competition-data
+          path: s6e8/
+          compression-level: 6
+          retention-days: 1
