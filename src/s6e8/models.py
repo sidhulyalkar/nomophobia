@@ -1,14 +1,26 @@
 from __future__ import annotations
+
 from lightgbm import LGBMClassifier
-from catboost import CatBoostClassifier
-from xgboost import XGBClassifier
 
 
-def make_lgb(seed: int, n_estimators: int, profile: str = "raw63", monotone_constraints=None, device: str = "cpu"):
+def make_lgb(
+    seed: int,
+    n_estimators: int,
+    profile: str = "raw63",
+    monotone_constraints=None,
+    device: str = "cpu",
+):
     params = dict(
-        objective="binary", metric="auc", n_estimators=n_estimators,
-        learning_rate=0.028, subsample=0.90, reg_lambda=1.5,
-        random_state=seed, n_jobs=-1, verbosity=-1, max_bin=255,
+        objective="binary",
+        metric="auc",
+        n_estimators=n_estimators,
+        learning_rate=0.028,
+        subsample=0.90,
+        reg_lambda=1.5,
+        random_state=seed,
+        n_jobs=-1,
+        verbosity=-1,
+        max_bin=255,
     )
     profiles = {
         "raw63": dict(num_leaves=63, min_child_samples=100, colsample_bytree=0.90, reg_alpha=0.10),
@@ -24,10 +36,20 @@ def make_lgb(seed: int, n_estimators: int, profile: str = "raw63", monotone_cons
         params["monotone_constraints"] = monotone_constraints
     if device == "gpu":
         params["device_type"] = "gpu"
+    elif device != "cpu":
+        raise ValueError(f"Unknown device: {device}")
     return LGBMClassifier(**params)
 
 
 def make_cat(seed: int, iterations: int, profile: str = "raw", device: str = "cpu"):
+    try:
+        from catboost import CatBoostClassifier
+    except ImportError as exc:
+        raise ImportError(
+            "CatBoost is an optional dependency. Install with "
+            '`pip install -e ".[diversity]"` or `pip install -r requirements.txt`.'
+        ) from exc
+
     return CatBoostClassifier(
         loss_function="Logloss", eval_metric="AUC", iterations=iterations,
         learning_rate=0.035, depth=8, l2_leaf_reg=6.0,
@@ -39,6 +61,14 @@ def make_cat(seed: int, iterations: int, profile: str = "raw", device: str = "cp
 
 
 def make_xgb(seed: int, n_estimators: int, profile: str = "raw", device: str = "cpu"):
+    try:
+        from xgboost import XGBClassifier
+    except ImportError as exc:
+        raise ImportError(
+            "XGBoost is an optional dependency. Install with "
+            '`pip install -e ".[diversity]"` or `pip install -r requirements.txt`.'
+        ) from exc
+
     return XGBClassifier(
         objective="binary:logistic", eval_metric="auc", n_estimators=n_estimators,
         learning_rate=0.028, max_depth=7, min_child_weight=10,
