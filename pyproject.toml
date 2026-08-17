@@ -4,12 +4,33 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "nomophobia-frontier"
-version = "0.1.0"
+version = "0.2.0"
 description = "Falsification-first Kaggle research system for predicting smartphone addiction"
 requires-python = ">=3.10"
 dependencies = [
-  "numpy>=2.0", "pandas>=2.2", "scikit-learn>=1.5", "scipy>=1.12",
-  "lightgbm>=4.3", "catboost>=1.2", "xgboost>=2.1", "joblib>=1.4", "torch>=2.4"
+  "numpy>=2.0,<3",
+  "pandas>=2.2,<3",
+  "scikit-learn>=1.5,<2",
+  "scipy>=1.12,<2",
+  "lightgbm>=4.3,<5",
+  "joblib>=1.4,<2",
+]
+
+[project.optional-dependencies]
+diversity = [
+  "catboost>=1.2,<2",
+  "xgboost>=2.1,<4",
+]
+neural = [
+  "torch>=2.4,<3",
+]
+full = [
+  "catboost>=1.2,<2",
+  "xgboost>=2.1,<4",
+  "torch>=2.4,<3",
+]
+dev = [
+  "pytest>=8,<10",
 ]
 
 [tool.setuptools.packages.find]
