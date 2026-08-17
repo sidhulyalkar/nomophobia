@@ -1,0 +1,173 @@
+name: experiment-bridge
+on:
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  te-lgbm:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          repository: Seyamalam/playground-series-s6e8
+          ref: main
+          path: model
+      - uses: actions/checkout@v4
+        with:
+          repository: s23010843/Predicting-Smartphone-Addiction
+          ref: main
+          path: data-src
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.13'
+      - name: Install dependencies
+        run: pip install 'numpy>=2.2' 'pandas>=2.2' 'scikit-learn>=1.7' 'lightgbm>=4.6'
+      - name: Prepare data and patch upstream fit keyword
+        run: |
+          mkdir -p model/Dataset
+          cp data-src/input/*.csv model/Dataset/
+          python - <<'PY'
+          from pathlib import Path
+          p=Path('model/src/train_lgbm.py')
+          s=p.read_text()
+          s=s.replace('            eval_X=x_valid,\n            eval_y=valid_target,\n', '            eval_set=[(x_valid, valid_target)],\n')
+          p.write_text(s)
+          PY
+      - name: Train strongest TE ratio LightGBM
+        working-directory: model
+        run: |
+          python src/train_lgbm.py \
+            --mode te --feature-set ratios --smoothing 10 --num-leaves 31 \
+            --folds 5 --inner-folds 10 --n-estimators 4500 \
+            --run-name lgbm_te_ratios_s10_l31_inner10_v1
+      - uses: actions/upload-artifact@v4
+        with:
+          name: te-lgbm-results
+          path: |
+            model/submissions/lgbm_te_ratios_s10_l31_inner10_v1.csv
+            model/artifacts/lgbm_te_ratios_s10_l31_inner10_v1/oof.csv
+            model/artifacts/lgbm_te_ratios_s10_l31_inner10_v1/metrics.json
+            model/artifacts/lgbm_te_ratios_s10_l31_inner10_v1/feature_importance.csv
+          retention-days: 1
+
+  te-xgb:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          repository: Seyamalam/playground-series-s6e8
+          ref: main
+          path: model
+      - uses: actions/checkout@v4
+        with:
+          repository: s23010843/Predicting-Smartphone-Addiction
+          ref: main
+          path: data-src
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.13'
+      - name: Install dependencies
+        run: pip install 'numpy>=2.2' 'pandas>=2.2' 'scikit-learn>=1.7' 'lightgbm>=4.6' 'xgboost>=3.3'
+      - name: Prepare data and patch imported LightGBM source
+        run: |
+          mkdir -p model/Dataset
+          cp data-src/input/*.csv model/Dataset/
+          python - <<'PY'
+          from pathlib import Path
+          p=Path('model/src/train_lgbm.py')
+          s=p.read_text()
+          s=s.replace('            eval_X=x_valid,\n            eval_y=valid_target,\n', '            eval_set=[(x_valid, valid_target)],\n')
+          p.write_text(s)
+          PY
+      - name: Train TE ratio XGBoost
+        working-directory: model
+        run: |
+          python src/train_xgb.py \
+            --folds 5 --inner-folds 5 --smoothing 10 \
+            --max-depth 8 --min-child-weight 20 --n-estimators 3000 \
+            --run-name xgb_te_ratios_d8_v1
+      - uses: actions/upload-artifact@v4
+        with:
+          name: te-xgb-results
+          path: |
+            model/submissions/xgb_te_ratios_d8_v1.csv
+            model/artifacts/xgb_te_ratios_d8_v1/oof.csv
+            model/artifacts/xgb_te_ratios_d8_v1/metrics.json
+            model/artifacts/xgb_te_ratios_d8_v1/feature_importance.csv
+          retention-days: 1
+
+  nomophobia-primary:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: main
+          path: model
+      - uses: actions/checkout@v4
+        with:
+          repository: s23010843/Predicting-Smartphone-Addiction
+          ref: main
+          path: data-src
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - name: Install NOMOPHOBIA core
+        working-directory: model
+        run: pip install -e .
+      - name: Prepare data
+        run: |
+          mkdir -p data
+          cp data-src/input/*.csv data/
+      - name: Reproduce current full-data portfolio
+        working-directory: model
+        run: |
+          python scripts/make_initial_submission.py \
+            --data-dir ../data --out-dir ../nomophobia-output \
+            --device cpu --combined-estimators 1000 --raw-estimators 1000 \
+            --combined-weight 0.625 --raw-weight 0.375 --hash-inputs
+      - uses: actions/upload-artifact@v4
+        with:
+          name: nomophobia-primary-results
+          path: nomophobia-output/
+          retention-days: 1
+
+  research-quick:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: main
+          path: model
+      - uses: actions/checkout@v4
+        with:
+          repository: s23010843/Predicting-Smartphone-Addiction
+          ref: main
+          path: data-src
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - name: Install NOMOPHOBIA core
+        working-directory: model
+        run: pip install -e .
+      - name: Prepare data
+        run: |
+          mkdir -p data
+          cp data-src/input/*.csv data/
+      - name: Run CPU research gates
+        working-directory: model
+        run: |
+          python scripts/run_cpu_research_suite.py \
+            --data-dir ../data --out-root ../research-output \
+            --profile quick --threads 4 --skip-source \
+            --zip-name research-output.zip
+      - uses: actions/upload-artifact@v4
+        with:
+          name: nomophobia-research-quick
+          path: |
+            research-output/
+            research-output.zip
+          retention-days: 1
