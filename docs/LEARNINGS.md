@@ -6,6 +6,10 @@
 
 This is the strongest measured feature family. Removing it from the engineered view produced the largest ablation loss seen in the representation study.
 
+A post-v3.3 source-adversarial audit sharpened the interpretation. On balanced 100k train + 100k test samples, production frequency features distinguish source at about **0.5653 AUC**. Missingness indicators alone achieve about **0.5663**, while the same frequency-source experiment restricted to rows with all original predictors observed falls to **0.4992 AUC**. The measurable source asymmetry is therefore explained by the already-known missingness shift rather than a hidden fingerprint among complete numerical rows.
+
+A separate 60k directional experiment with a 700-tree combined model found train+test reference frequencies ahead of train-only reference frequencies by about **+0.00055 AUC** on an untouched 15k evaluation set, paired interval approximately **[+0.00004,+0.00111]**. This is below S1 scale, so it advances the hypothesis rather than promoting it.
+
 ### Behavioral decomposition
 
 Features describing how total screen exposure is composed across social, gaming, work/study, weekend use, and sleep burden add real signal beyond the raw columns.
@@ -30,4 +34,4 @@ Hard specialists, isotonic regime calibration, and marginalization-style imputat
 
 ## Methodological lesson
 
-The most valuable asset in this repository is not a particular feature. It is the ability to say **no** to an attractive result when it fails replication.
+The most valuable asset in this repository is not a particular feature. It is the ability to say **no** to an attractive result when it fails replication, and to distinguish a useful transductive signal from a source-membership artifact before trusting it.
