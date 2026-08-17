@@ -16,12 +16,18 @@ jobs:
         with:
           ref: main
           path: nomophobia
-      - name: Checkout public S6E8 benchmark source
+      - name: Checkout public data snapshot source
         uses: actions/checkout@v4
         with:
           repository: s23010843/Predicting-Smartphone-Addiction
           ref: main
           path: public-benchmark
+      - name: Checkout high-scoring fold-safe TE source
+        uses: actions/checkout@v4
+        with:
+          repository: Seyamalam/playground-series-s6e8
+          ref: main
+          path: te-benchmark
       - name: Fetch and validate public competition CSV snapshot
         shell: bash
         run: |
@@ -61,11 +67,19 @@ jobs:
           include-hidden-files: true
           compression-level: 6
           retention-days: 1
-      - name: Upload public benchmark source artifact
+      - name: Upload simple public benchmark source artifact
         uses: actions/upload-artifact@v4
         with:
           name: public-s6e8-benchmark-source
           path: public-benchmark/
+          include-hidden-files: true
+          compression-level: 6
+          retention-days: 1
+      - name: Upload high-scoring TE benchmark source artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: te-s6e8-benchmark-source
+          path: te-benchmark/
           include-hidden-files: true
           compression-level: 6
           retention-days: 1
