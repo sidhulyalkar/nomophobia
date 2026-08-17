@@ -2,297 +2,265 @@
 
 **NOMOPHOBIA: NO MObile PHone PhoBIA**
 
-A falsification-first machine-learning research system for Kaggle Playground Series Season 6 Episode 8, **Predicting Smartphone Addiction**.
+A falsification-first research system for Kaggle Playground Series Season 6 Episode 8, **Predicting Smartphone Addiction**.
 
-> The project name is inspired by *“NOMOPHOBIA: NO MObile PHone PhoBIA”* by Sudip Bhattacharya, Md Abu Bashar, Abhay Srivastava, and Amarjeet Singh (PMCID: PMC6510111; PMID: 31143710).
->
-> **Scientific note:** nomophobia and smartphone addiction are related concepts, but they are not interchangeable diagnoses. The Kaggle target is a synthetic binary `addicted_label`; this repository does not attempt to clinically diagnose nomophobia.
+> Scientific note: the project name references the nomophobia literature, but this repository predicts Kaggle's synthetic binary `addicted_label`; it is not a clinical diagnostic system.
 
-## Current thesis
+## Current competition thesis
 
-The strongest corrected evidence says this is primarily a **transductive-frequency + behavioral-decomposition** problem, with a deliberately raw model supplying error diversity.
+The strongest corrected evidence points to a **population-frequency + behavioral-decomposition** problem, with a deliberately raw model supplying potentially useful error diversity.
 
 ```text
-                       user row
+                         row
                           │
               ┌───────────┴───────────┐
               │                       │
        engineered view             raw view
               │                       │
-   behavior + missingness          12 original
-   + frequency structure           predictors
-   + small digit block                │
+ behavior + missingness          12 predictors
+ + population frequency               │
+ + small digit block                  │
               │                       │
-       LGBM 63 leaves          LGBM 63 leaves
+       LGBM combined63            LGBM raw63
               │                       │
               └───────────┬───────────┘
                           │
                      rank blend
-                          │
-                          ▼
-                  Kaggle AUC score
 ```
 
-The raw expert is intentionally **not** decorated with engineered features. Diversity is part of the architecture.
+Existing controlled ablations attribute roughly **+0.0038 AUC** to the frequency block, **+0.0018** to behavioral decomposition, and only **+0.0002** to the entire digit/rounding family. Five independent S1 dual-view replications were positive: three at 700 trees and two at 1000 trees. This is strong screening evidence, not an S3 promotion claim.
 
-## What the evidence currently says
-
-### Frequency structure is load-bearing
-
-Corrected feature-family ablations indicate approximately:
-
-| Removed family | AUC loss |
-|---|---:|
-| Full-reference frequency features | ~0.0038 |
-| Behavioral decomposition | ~0.0018 |
-| Entire digit / rounding family | ~0.0002 |
-
-Early work emphasized decimal artifacts. Mature ablations changed the framing: occurrence density is the dominant engineered signal.
-
-### Capacity mattered more than expected
-
-The early 220-tree screens were underfit. On identical held-out rows, increasing the same `combined63` architecture from 260 to 340 trees produced about **+0.00113 AUC**. Performance continued improving through the 700–1000-tree regime before beginning to flatten.
-
-That invalidated several early diversity kills. CatBoost, XGBoost, and Evidence candidates must be retried at mature capacity before they are rejected.
-
-### The dual-view blend repeatedly survived
-
-Five independent S1 replications were positive:
-
-- 3 replications at 700 trees: mean blend gain ≈ **+0.00079 AUC**
-- 2 replications at 1000 trees: mean blend gain ≈ **+0.00105 AUC**
-
-These are independent replications, not the five evaluation subpartitions used inside a single replication. They are promising S1 evidence, not an S3 promotion claim.
-
-## v0.2 production safety rails
-
-The research logic was already careful; the software boundary is now equally strict.
-
-Before training, `load_competition()` validates:
-
-- exact competition columns;
-- unique, non-missing IDs;
-- binary finite target values;
-- finite-or-missing numeric predictors;
-- exact `sample_submission.csv` ↔ test ID order.
-
-Every generated submission is then:
-
-1. checked for exact test-row/ID alignment;
-2. checked for finite, non-constant ranking scores;
-3. written atomically;
-4. re-read from disk;
-5. validated again;
-6. SHA-256 hashed into run metadata.
-
-The goal is simple: a CSV that merely *looks* valid should never escape the pipeline.
-
-See [`docs/REPOSITORY_AUDIT.md`](docs/REPOSITORY_AUDIT.md).
-
-## Repository map
+The current v0.1 submission remains frozen at:
 
 ```text
-nomophobia/
-├── README.md
-├── src/s6e8/
-│   ├── features.py             # behavior, missingness, digit, frequency views
-│   ├── frequency.py            # pre-registered frequency sub-family selectors
-│   ├── preprocess.py           # shared native categorical preparation
-│   ├── models.py               # LightGBM core + lazy optional model families
-│   ├── validation.py           # competition/submission contracts
-│   ├── submission.py           # rank blending + atomic validated CSV writes
-│   ├── artifacts.py            # hashes, atomic manifests, runtime provenance
-│   ├── cv.py / evaluate.py     # frozen folds + paired statistical evaluation
-│   └── ...                     # ensemble, residual, evidence, meta-model tools
-├── experiments/
-│   ├── frequency_family_ablation.py
-│   ├── frequency_stress.py
-│   ├── family_diversity.py
-│   ├── evidence_screen.py
-│   └── ...
-├── scripts/
-│   └── make_initial_submission.py
-├── tests/
-├── docs/
-│   ├── REPOSITORY_AUDIT.md
-│   ├── SCIENTIFIC_CONTEXT.md
-│   ├── ARCHITECTURE.md
-│   ├── LEARNINGS.md
-│   ├── DECISIONS.md
-│   ├── EXECUTION_DIRECTIVE.md
-│   ├── KAGGLE_RUNBOOK.md
-│   └── VALIDATION.md
-├── tune_iterations.py
-├── run_winner.py
-├── run_s3.py
-├── run_diversity_retrial.py
-├── stack_external.py
-├── select_portfolio.py
-└── train.py
+combined63: 1000 trees
+raw63:      1000 trees
+score = 0.625 × rank(combined) + 0.375 × rank(raw)
 ```
 
-## Installation
+The first full-data test inference produced higher raw/combined rank correlation than the S1 screens, so v0.3 treats **capacity-dependent diversity collapse** as a first-class hypothesis instead of assuming the 37.5% raw weight will survive S3.
 
-### Production core
+## What v0.3 changes
 
-For the current LightGBM winner and submission pipeline:
+v0.3 turns the research codebase into an evidence-driven campaign engine while preserving the current winner until new ideas earn promotion.
 
-```bash
-pip install -e .
-```
-
-### Research extras
+### Installable CLI
 
 ```bash
-# CatBoost + XGBoost diversity retrials
-pip install -e ".[diversity]"
-
-# neural experiments
-pip install -e ".[neural]"
-
-# all optional model families
-pip install -e ".[full]"
-
-# tests
 pip install -e ".[dev]"
+nomophobia --help
 ```
 
-`requirements.txt` remains a convenient full competition environment.
-
-## Expected Kaggle data
-
-Place the competition files in `data/`:
+Commands:
 
 ```text
-data/
-├── train.csv
-├── test.csv
-└── sample_submission.csv
+nomophobia validate   validate competition files and provenance
+nomophobia route      inspect completed artifacts and recommend the next experiment
+nomophobia tune       repeated production-scale iteration calibration
+nomophobia s3         authoritative 3-seed × 5-fold campaign
+nomophobia winner     tune both experts, run S3, route the result, materialize submission
 ```
 
-Competition data are not committed to this repository.
+The historical `run_winner.py`, `run_s3.py`, and `tune_iterations.py` entrypoints remain as compatibility wrappers.
 
-## Tests
+### Universal experiment manifests
+
+Every new campaign can emit a failure-safe manifest containing:
+
+- evidence tier;
+- hypothesis and falsifying measurement;
+- accept and kill rules;
+- Git SHA / branch when available;
+- Python and package versions;
+- competition CSV SHA-256 hashes;
+- exact configuration and seeds;
+- elapsed time;
+- metrics;
+- output file hashes;
+- crash status and traceback when a run fails.
+
+See [`docs/EXPERIMENT_MANIFEST.md`](docs/EXPERIMENT_MANIFEST.md).
+
+### Repeated production-scale tuning
+
+A single inner holdout can choose a noisy tree count. v0.3 tunes each LightGBM expert on repeated production-scale holdouts and freezes the **median** best iteration for all S3 folds.
 
 ```bash
-pytest -q
+nomophobia tune \
+  --data-dir /kaggle/input/playground-series-s6e8 \
+  --expert lgb_combined63 \
+  --rows 628000 \
+  --max-estimators 4000 \
+  --patience 200 \
+  --repeats 3 \
+  --device gpu
 ```
 
-CI runs the suite on Python 3.10, 3.11, and 3.12 and compiles source/scripts before pytest.
+The job stops for inspection if any repeat hits the estimator ceiling or if the selected iteration range exceeds 30% of its median.
 
-## Generate the initial full-data submission
+## Frequency research program
+
+### 1. Mature source-safety stress
 
 ```bash
-python scripts/make_initial_submission.py \
-  --data-dir data \
-  --out-dir artifacts/submissions/initial_v0_1 \
-  --combined-estimators 1000 \
-  --raw-estimators 1000 \
-  --raw-weight 0.375
+python experiments/frequency_stress.py \
+  --data-dir /kaggle/input/playground-series-s6e8 \
+  --rows 120000 \
+  --estimators 1000 \
+  --source-rows 100000 \
+  --device gpu \
+  --out artifacts/frequency_stress.json
 ```
 
-For byte-level input provenance, add:
+This now reports three different source tests:
+
+1. frequency-only train vs test AUC on all sampled rows;
+2. missingness-only train vs test AUC;
+3. **frequency-only train vs test AUC on complete rows**.
+
+The third is the important kill switch. A source signal explained by missingness is different from a hidden fingerprint among otherwise complete records.
+
+### 2. Marginal frequency-family decomposition
 
 ```bash
---hash-inputs
+python experiments/frequency_family_ablation.py \
+  --data-dir /kaggle/input/playground-series-s6e8 \
+  --rows 120000 \
+  --estimators 1000 \
+  --device gpu \
+  --out artifacts/frequency_family_ablation.json
 ```
 
-The primary configuration remains:
+Arms are `full`, `none`, `exact_only`, `rounded_only`, `categorical_only`, and `exact_plus_rounded`. Reduced arms are now compared to `full` with paired OOF confidence intervals rather than naked point AUCs.
 
-```text
-0.625 × rank(combined63) + 0.375 × rank(raw63)
-```
-
-This is a pragmatic initial submission based on repeated S1 results. It is **not** a substitute for the authoritative S3 campaign.
-
-## Run the production campaign
+### 3. Higher-order target-free density geometry
 
 ```bash
-python run_winner.py \
+python experiments/frequency_geometry.py \
+  --data-dir /kaggle/input/playground-series-s6e8 \
+  --rows 120000 \
+  --estimators 1000 \
+  --device gpu \
+  --out-dir artifacts/frequency_geometry
+```
+
+The experiment tests:
+
+- selected pair frequencies such as daily×social and daily×weekend;
+- selected triple frequencies such as daily×social×weekend;
+- smoothed interaction / conditional-density quantities;
+- value frequency conditioned on the row's **other-feature missingness regime**;
+- unsigned train/test support stability.
+
+No target means are used. Source-stability arms have their own complete-row source-adversarial stop gate.
+
+### 4. Capacity-dependent diversity curve
+
+```bash
+python experiments/capacity_diversity_curve.py \
+  --data-dir /kaggle/input/playground-series-s6e8 \
+  --rows 180000 \
+  --estimators 400 700 1000 1400 2000 \
+  --device gpu \
+  --out artifacts/capacity_diversity_curve.json
+```
+
+This deliberately fixes the raw weight at 37.5%. It asks whether raw/combined rank correlation rises toward the production warning region as capacity increases and whether a fixed raw hedge still changes pairwise ordering beneficially. It is a routing experiment, not another blend-weight optimizer.
+
+## A new source-data hypothesis
+
+Earlier source experiments tried source severity as a feature, blend member, or boosting prior. v0.3 adds a different test: **direct low-weight labeled-row augmentation**.
+
+```bash
+python experiments/original_row_augmentation.py \
+  --data-dir /kaggle/input/playground-series-s6e8 \
+  --original-csv /kaggle/input/<SOURCE>/<source.csv> \
+  --rows 120000 \
+  --estimators 1000 \
+  --weights 0.05 0.10 0.25 0.50 1.0 \
+  --device gpu \
+  --out-dir artifacts/original_row_augmentation
+```
+
+Exact predictor-overlap source rows are removed before training. Source rows are never used as validation evidence. The fixed broad weight grid is intentional: a result that exists only at a finely optimized source weight is not interesting enough to promote.
+
+## Authoritative S3
+
+The main campaign is now:
+
+```bash
+nomophobia winner \
   --data-dir /kaggle/input/playground-series-s6e8 \
   --out-root artifacts/winner \
   --device gpu \
   --tune-rows 628000 \
   --max-estimators 4000 \
   --patience 200 \
-  --dry-run
+  --tune-repeats 3
 ```
 
-Inspect the generated commands, remove `--dry-run`, and allow the tuned frozen counts to feed the S3 campaign. If tuning lands within 10% of the estimator ceiling, raise the ceiling before S3.
+S3 still means **3 distinct seeds × 5 frozen folds × all 691,369 labeled rows**. Promotion requires:
 
-## Highest-EV next feature experiment
+- at least 13/15 positive fold-seed deltas;
+- pooled paired CI above zero;
+- positive test-missingness-weighted delta;
+- candidate fold-AUC standard deviation within 120% of baseline.
 
-Before adding new complexity, decompose the existing frequency gain:
+v0.3 additionally diagnoses:
+
+- blend-AUC spread across seeds;
+- raw/combined rank correlation at production capacity;
+- optimistic-vs-honest blend selection gap;
+- rotation-weight mean/std/range across all held folds.
+
+If S3 promotes the dual view, the backbone is frozen and mature CatBoost/XGBoost/Evidence retrials become the next priority. If combined promotes but raw does not, the system stops probing tiny raw weights and redirects effort to genuinely new diversity sources.
+
+When a model is promoted, the winner campaign copies the appropriate seed-bag candidate to `submission_s3.csv`, validates it against test IDs, and records its SHA-256.
+
+## Evidence router
+
+After experiments complete:
 
 ```bash
-python experiments/frequency_family_ablation.py \
-  --data-dir /kaggle/input/playground-series-s6e8 \
-  --out artifacts/frequency_family_ablation.json \
-  --rows 60000 \
-  --estimators 700 \
-  --folds 5 \
-  --device gpu
+nomophobia route \
+  --artifact-root artifacts \
+  --data-dir /kaggle/input/playground-series-s6e8
 ```
 
-The pre-registered arms are:
+The router inspects what evidence is actually present and emits the next highest-value command. The goal is to avoid the classic Kaggle research swamp where dozens of half-tested branches accumulate and nobody remembers which uncertainty matters most.
 
-- full frequency block;
-- no frequency;
-- exact-only;
-- rounded-only;
-- categorical-only;
-- exact + rounded.
+See [`docs/RESEARCH_ROADMAP_V03.md`](docs/RESEARCH_ROADMAP_V03.md) and [`docs/KAGGLE_RUNBOOK.md`](docs/KAGGLE_RUNBOOK.md).
 
-The non-frequency backbone, model profile, folds, capacity, and full train+test target-free frequency reference remain fixed. This isolates *which density representation is paying rent* before we spend memory on pair/triple frequencies.
+## Production safety rails
 
-## Scientific method
+`load_competition()` validates exact columns, ID uniqueness/order, target validity, and finite-or-missing numeric predictors. Submission generation validates row count and test-ID order, rejects non-finite/constant scores, writes atomically, re-reads from disk, validates again, and SHA-256 hashes the artifact.
 
-A candidate does not become part of the winner because its AUC is numerically higher once.
+## Research discipline
 
-Promotion uses:
-
-- identical-row paired comparisons;
-- DeLong testing for correlated ROC curves;
-- paired bootstrap / Bag of Little Bootstraps at large `n`;
-- frozen folds;
-- fixed iteration counts during OOF evaluation;
-- explicit train/test frequency-reference controls;
-- 3 seeds × 5 folds for S3;
-- test-missingness-weighted validation;
-- held-fold blend-weight selection.
-
-The S3 promotion rule requires at least **13/15 positive fold-seed comparisons**, a positive pooled confidence interval, positive test-like weighted delta, and no unacceptable increase in fold instability.
-
-Negative experiments remain first-class research results. See [`docs/DECISIONS.md`](docs/DECISIONS.md).
-
-## Submission strategy
-
-Treat the daily leaderboard limit as an **experiment budget**:
-
-1. primary dual-view rank blend;
-2. mature combined-only control;
-3. at most one broad nearby weight probe if the first two separate meaningfully;
-4. preserve the remaining slots for S3/public-stack hypotheses.
-
-Public-LB feedback is weak evidence because the public subset introduces sampling noise. OOF remains the source of truth.
+- S0: plumbing/direction only.
+- S1: may advance, never promote.
+- S2: effect-size confirmation.
+- S3: only promotion tier.
+- Every claim uses identical-row paired comparisons where applicable.
+- Failed ideas remain in [`docs/DECISIONS.md`](docs/DECISIONS.md).
+- A surprise >+0.003 improvement is treated as a leak alarm before a win.
+- A zero optimized ensemble weight is never sufficient evidence to kill a diversity member.
 
 ## Endgame
 
-After S3, Frontier competes directly against the aligned public OOF universe. Public and Frontier streams are correlation-pruned together before bagged Caruana selection.
+After S3, the frozen Frontier streams are priced against the aligned public OOF universe using correlation pruning and bagged Caruana selection. `frontier_total_weight` is the key diagnostic:
 
-The key diagnostic is `frontier_total_weight`:
+- **≥15%**: meaningful orthogonal signal;
+- **5–15%**: marginal; prioritize diversity;
+- **<5%**: stop tuning the same LightGBM basin.
 
-- **≥15%**: meaningful orthogonal signal
-- **5–15%**: marginal contribution; prioritize diversity
-- **<5%**: stop tuning this backbone; it lies inside the public solution basin
+## Status
 
-## Reproducibility status
-
-- audit fixes A1/A4/A5/A7: implemented
-- v0.2 competition and submission contracts: implemented
-- full 296,302-row inference path: previously verified on v0.1
-- full S3 promotion: **pending Kaggle GPU campaign**
-- public 74-stream pricing: **pending external OOF input**
+- v0.2 production contracts: implemented.
+- v0.3 package CLI + manifests: implemented on the current development release.
+- mature frequency geometry / source-row augmentation: implemented, evidence pending execution.
+- authoritative S3: pending production GPU execution.
+- competition-winning status: **not claimed until leaderboard and S3 evidence support it**.
 
 ## License
 
