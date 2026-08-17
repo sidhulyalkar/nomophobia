@@ -11,7 +11,7 @@ jobs:
   package-data:
     runs-on: ubuntu-24.04
     steps:
-      - name: Fetch public competition CSV snapshot
+      - name: Fetch and validate public competition CSV snapshot
         shell: bash
         run: |
           set -euxo pipefail
@@ -23,17 +23,27 @@ jobs:
           wc -l s6e8/*.csv
           sha256sum s6e8/*.csv | tee s6e8/SHA256SUMS.txt
           python - <<'PY'
-          import pandas as pd
-          tr=pd.read_csv('s6e8/train.csv')
-          te=pd.read_csv('s6e8/test.csv')
-          ss=pd.read_csv('s6e8/sample_submission.csv')
+          import csv
+          from pathlib import Path
+
+          def inspect(path):
+              with Path(path).open(newline='', encoding='utf-8') as f:
+                  r=csv.reader(f)
+                  header=next(r)
+                  rows=list(r)
+              return header, rows
+
+          th,tr=inspect('s6e8/train.csv')
+          eh,er=inspect('s6e8/test.csv')
+          sh,sr=inspect('s6e8/sample_submission.csv')
           assert len(tr)==691369, len(tr)
-          assert len(te)==296302, len(te)
-          assert len(ss)==296302, len(ss)
-          assert 'addicted_label' in tr.columns
-          assert list(ss.columns)==['id','addicted_label']
-          assert te['id'].equals(ss['id'])
-          print('validated', tr.shape, te.shape, ss.shape)
+          assert len(er)==296302, len(er)
+          assert len(sr)==296302, len(sr)
+          assert 'addicted_label' in th
+          assert sh==['id','addicted_label'], sh
+          test_id_idx=eh.index('id')
+          assert all(a[test_id_idx] == b[0] for a,b in zip(er,sr))
+          print('validated', len(tr), len(er), len(sr), th, eh, sh)
           PY
       - name: Upload competition data artifact
         uses: actions/upload-artifact@v4
