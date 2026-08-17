@@ -1,0 +1,14 @@
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.venv/
+venv/
+data/
+artifacts/
+models/
+*.npy
+*.pkl
+*.joblib
+*.parquet
+submission*.csv
+.DS_Store
