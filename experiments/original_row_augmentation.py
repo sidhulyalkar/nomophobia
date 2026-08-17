@@ -32,12 +32,16 @@ def canonical_hash(df):
         if pd.api.types.is_numeric_dtype(x[c]):x[c]=pd.to_numeric(x[c],errors='coerce').round(8)
         else:x[c]=x[c].astype('string').fillna('__MISSING__')
     return pd.util.hash_pandas_object(x,index=False).to_numpy(dtype=np.uint64)
+def binary_source_label(s):
+    raw=s.astype('string').str.strip().str.lower();mapped=raw.map({'0':0,'1':1,'no':0,'yes':1,'false':0,'true':1,'not addicted':0,'addicted':1})
+    numeric=pd.to_numeric(s,errors='coerce');mapped=mapped.where(mapped.notna(),numeric)
+    if mapped.isna().any() or not set(mapped.astype(int).unique()).issubset({0,1}):
+        bad=sorted(raw.loc[mapped.isna()].dropna().unique().tolist())[:10];raise ValueError(f'source addicted_label must be binary 0/1 or Yes/No; bad values={bad}')
+    return mapped.astype(int)
 def clean_source(source,competition):
     missing=[c for c in RAW_COLS+[TARGET] if c not in source]
     if missing:raise ValueError(f'original source missing required columns: {missing}')
-    y=pd.to_numeric(source[TARGET],errors='coerce')
-    if y.isna().any() or not set(y.astype(int).unique()).issubset({0,1}):raise ValueError('source addicted_label must be binary 0/1')
-    source=source.copy();source[TARGET]=y.astype(int);before=len(source);source=source.loc[~pd.Series(canonical_hash(source)).isin(set(canonical_hash(competition))).to_numpy()].copy();overlap=before-len(source);before_dedup=len(source);source=source.loc[~pd.Series(canonical_hash(source)).duplicated().to_numpy()].reset_index(drop=True)
+    source=source.copy();source[TARGET]=binary_source_label(source[TARGET]);before=len(source);source=source.loc[~pd.Series(canonical_hash(source)).isin(set(canonical_hash(competition))).to_numpy()].copy();overlap=before-len(source);before_dedup=len(source);source=source.loc[~pd.Series(canonical_hash(source)).duplicated().to_numpy()].reset_index(drop=True)
     return source,{'source_rows_input':before,'exact_predictor_overlap_removed':int(overlap),'source_predictor_duplicates_removed':int(before_dedup-len(source)),'source_rows_usable':int(len(source))}
 def main():
     p=argparse.ArgumentParser();p.add_argument('--data-dir',default='data');p.add_argument('--original-csv',required=True);p.add_argument('--out-dir',default='artifacts/original_row_augmentation');p.add_argument('--rows',type=int,default=120000);p.add_argument('--estimators',type=int,default=1000);p.add_argument('--weights',nargs='+',type=float,default=[.05,.10,.25,.50,1.0]);p.add_argument('--folds',type=int,default=5);p.add_argument('--bootstrap',type=int,default=1200);p.add_argument('--seed',type=int,default=20260816);p.add_argument('--device',choices=['cpu','gpu'],default='gpu');p.add_argument('--view',choices=['combined','raw'],default='combined');p.add_argument('--no-hash-inputs',action='store_true');a=p.parse_args();out=Path(a.out_dir);out.mkdir(parents=True,exist_ok=True)
@@ -47,7 +51,6 @@ def main():
         if a.view=='combined':
             X,_=build_features(df.drop(columns=[TARGET]),te.iloc[:1],use_frequency=True,frequency_reference=freq_ref);SX,_=build_features(source.drop(columns=[TARGET]),te.iloc[:1],use_frequency=True,frequency_reference=freq_ref)
         else:X=df[RAW_COLS].copy();SX=source[RAW_COLS].copy()
-        # Force one shared categorical vocabulary across competition and source frames.
         joined=pd.concat([X,SX],ignore_index=True);_,_,native,_,cats=prepare_tree_frames(joined,joined.iloc[:1].copy());A=native.iloc[:len(X)].reset_index(drop=True);S=native.iloc[len(X):].reset_index(drop=True);sy=source[TARGET].to_numpy(dtype=int)
         predictions={};metrics={}
         for weight in [0.0]+sorted(set(float(w) for w in a.weights)):
