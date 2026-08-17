@@ -1,5 +1,15 @@
 # Changelog
 
+## 0.3.1 — Kaggle CPU notebook operations
+
+- Added a two-notebook Kaggle CPU workflow under `kaggle/notebooks/` to minimize manual orchestration.
+- Added a gated CPU research suite that runs frequency safety, marginal decomposition, capacity diversity, higher-order density geometry, and optional source augmentation synchronously.
+- Added a resumable CPU S3 wrapper that refuses stale tuning artifacts, stops on estimator-ceiling or tuning-instability warnings, reuses only matching completed seed runs, and materializes the promoted submission.
+- Added one-time competition input hashing to avoid repeated SHA-256 work across child experiments.
+- Added a detailed Kaggle input/output runbook with exact mounts, CPU profiles, online/offline repository bootstrap, notebook chaining, and artifact handoff.
+- Added CI checks that parse every Kaggle notebook code cell with Python's AST.
+- Made source-row augmentation accept common binary label encodings such as `0/1`, `Yes/No`, and `True/False` while rejecting ambiguous labels.
+
 ## 0.3.0 — Frequency geometry and authoritative S3 engine
 
 - Added installable `nomophobia` CLI with `validate`, `route`, `tune`, `s3`, and `winner` commands.
