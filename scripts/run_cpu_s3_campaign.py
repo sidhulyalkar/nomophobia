@@ -35,10 +35,21 @@ def read_json(path: Path) -> dict:
     return json.loads(path.read_text()) if path.exists() else {}
 
 
-def tuning_ok(path: Path, *, repeats: int, ceiling_fraction: float) -> bool:
+def tuning_ok(
+    path: Path,
+    *,
+    rows: int,
+    max_estimators: int,
+    patience: int,
+    repeats: int,
+    ceiling_fraction: float,
+) -> bool:
     d = read_json(path)
     return bool(
         d
+        and int(d.get("rows_total", -1)) == rows
+        and int(d.get("max_estimators", -1)) == max_estimators
+        and int(d.get("patience", -1)) == patience
         and int(d.get("repeats", -1)) == repeats
         and abs(float(d.get("ceiling_fraction", -1)) - ceiling_fraction) < 1e-12
         and int(d.get("best_iteration", 0)) > 0
@@ -76,6 +87,19 @@ def hash_inputs_once(data_dir: Path, out_root: Path) -> dict:
     hashes = {name: sha256_file(data_dir / name) for name in ("train.csv", "test.csv", "sample_submission.csv")}
     atomic_write_json(path, hashes)
     return hashes
+
+
+def stop_before_s3(out_root: Path, expert: str, meta: dict, status: str, action: str) -> None:
+    payload = {
+        "version": "nomophobia-v0.3-cpu-s3",
+        "status": status,
+        "expert": expert,
+        "tuning": meta,
+        "action": action,
+    }
+    atomic_write_json(out_root / "cpu_s3_summary.json", payload)
+    print(json.dumps(payload, indent=2))
+    raise SystemExit(3)
 
 
 def main() -> None:
@@ -121,7 +145,14 @@ def main() -> None:
             tuning[label] = {"provided": True, "best_iteration": int(provided)}
             continue
         out = out_root / f"tune_{label}.json"
-        if resume and tuning_ok(out, repeats=a.tune_repeats, ceiling_fraction=a.ceiling_fraction):
+        if resume and tuning_ok(
+            out,
+            rows=a.tune_rows,
+            max_estimators=a.max_estimators,
+            patience=a.patience,
+            repeats=a.tune_repeats,
+            ceiling_fraction=a.ceiling_fraction,
+        ):
             print(f"Reusing completed tuning artifact: {out}")
         else:
             run([
@@ -139,16 +170,9 @@ def main() -> None:
             ])
         meta = read_json(out)
         if meta.get("ceiling_hit_any_repeat"):
-            stop = {
-                "version": "nomophobia-v0.3-cpu-s3",
-                "status": "STOP_MAX_ESTIMATOR_CEILING",
-                "expert": expert,
-                "tuning": meta,
-                "action": "Raise --max-estimators and rerun before spending S3 folds.",
-            }
-            atomic_write_json(out_root / "cpu_s3_summary.json", stop)
-            print(json.dumps(stop, indent=2))
-            raise SystemExit(3)
+            stop_before_s3(out_root, expert, meta, "STOP_MAX_ESTIMATOR_CEILING", "Raise --max-estimators and rerun before spending S3 folds.")
+        if meta.get("tuning_instability_warning"):
+            stop_before_s3(out_root, expert, meta, "STOP_TUNING_INSTABILITY", "Best-iteration spread exceeded 30% of the median; diagnose capacity stability before S3.")
         selected[label] = int(meta["best_iteration"])
         tuning[label] = meta
 
