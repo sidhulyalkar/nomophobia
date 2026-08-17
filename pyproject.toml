@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "nomophobia-frontier"
-version = "0.2.0"
+version = "0.3.0"
 description = "Falsification-first Kaggle research system for predicting smartphone addiction"
 requires-python = ">=3.10"
 dependencies = [
@@ -17,21 +17,13 @@ dependencies = [
 ]
 
 [project.optional-dependencies]
-diversity = [
-  "catboost>=1.2,<2",
-  "xgboost>=2.1,<4",
-]
-neural = [
-  "torch>=2.4,<3",
-]
-full = [
-  "catboost>=1.2,<2",
-  "xgboost>=2.1,<4",
-  "torch>=2.4,<3",
-]
-dev = [
-  "pytest>=8,<10",
-]
+diversity = ["catboost>=1.2,<2", "xgboost>=2.1,<4"]
+neural = ["torch>=2.4,<3"]
+full = ["catboost>=1.2,<2", "xgboost>=2.1,<4", "torch>=2.4,<3"]
+dev = ["pytest>=8,<10"]
+
+[project.scripts]
+nomophobia = "s6e8.cli:main"
 
 [tool.setuptools.packages.find]
 where = ["src"]
