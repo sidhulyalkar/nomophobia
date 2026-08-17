@@ -16,39 +16,35 @@ jobs:
         with:
           ref: main
           path: nomophobia
+      - name: Checkout public S6E8 benchmark source
+        uses: actions/checkout@v4
+        with:
+          repository: s23010843/Predicting-Smartphone-Addiction
+          ref: main
+          path: public-benchmark
       - name: Fetch and validate public competition CSV snapshot
         shell: bash
         run: |
           set -euxo pipefail
           mkdir -p s6e8
-          base='https://raw.githubusercontent.com/s23010843/Predicting-Smartphone-Addiction/main/input'
-          curl -L --fail --retry 3 "$base/train.csv" -o s6e8/train.csv
-          curl -L --fail --retry 3 "$base/test.csv" -o s6e8/test.csv
-          curl -L --fail --retry 3 "$base/sample_submission.csv" -o s6e8/sample_submission.csv
+          cp public-benchmark/input/train.csv s6e8/train.csv
+          cp public-benchmark/input/test.csv s6e8/test.csv
+          cp public-benchmark/input/sample_submission.csv s6e8/sample_submission.csv
           wc -l s6e8/*.csv
           sha256sum s6e8/*.csv | tee s6e8/SHA256SUMS.txt
           python - <<'PY'
           import csv
           from pathlib import Path
-
           def inspect(path):
               with Path(path).open(newline='', encoding='utf-8') as f:
-                  r=csv.reader(f)
-                  header=next(r)
-                  rows=list(r)
+                  r=csv.reader(f); header=next(r); rows=list(r)
               return header, rows
-
-          th,tr=inspect('s6e8/train.csv')
-          eh,er=inspect('s6e8/test.csv')
-          sh,sr=inspect('s6e8/sample_submission.csv')
-          assert len(tr)==691369, len(tr)
-          assert len(er)==296302, len(er)
-          assert len(sr)==296302, len(sr)
-          assert 'addicted_label' in th
-          assert sh==['id','addicted_label'], sh
+          th,tr=inspect('s6e8/train.csv'); eh,er=inspect('s6e8/test.csv'); sh,sr=inspect('s6e8/sample_submission.csv')
+          assert len(tr)==691369 and len(er)==296302 and len(sr)==296302
+          assert 'addicted_label' in th and sh==['id','addicted_label']
           test_id_idx=eh.index('id')
           assert all(a[test_id_idx] == b[0] for a,b in zip(er,sr))
-          print('validated', len(tr), len(er), len(sr), th, eh, sh)
+          print('validated', len(tr), len(er), len(sr))
           PY
       - name: Upload competition data artifact
         uses: actions/upload-artifact@v4
@@ -62,6 +58,14 @@ jobs:
         with:
           name: nomophobia-main-source
           path: nomophobia/
+          include-hidden-files: true
+          compression-level: 6
+          retention-days: 1
+      - name: Upload public benchmark source artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: public-s6e8-benchmark-source
+          path: public-benchmark/
           include-hidden-files: true
           compression-level: 6
           retention-days: 1
