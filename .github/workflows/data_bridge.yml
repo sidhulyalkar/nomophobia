@@ -11,6 +11,11 @@ jobs:
   package-data:
     runs-on: ubuntu-24.04
     steps:
+      - name: Checkout merged main source
+        uses: actions/checkout@v4
+        with:
+          ref: main
+          path: nomophobia
       - name: Fetch and validate public competition CSV snapshot
         shell: bash
         run: |
@@ -50,5 +55,13 @@ jobs:
         with:
           name: s6e8-competition-data
           path: s6e8/
+          compression-level: 6
+          retention-days: 1
+      - name: Upload merged repo source artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: nomophobia-main-source
+          path: nomophobia/
+          include-hidden-files: true
           compression-level: 6
           retention-days: 1
