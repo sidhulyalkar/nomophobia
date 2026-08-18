@@ -40,6 +40,47 @@ score = 0.625 × rank(combined) + 0.375 × rank(raw)
 
 The first full-data test inference produced higher raw/combined rank correlation than the S1 screens, so v0.3 treats **capacity-dependent diversity collapse** as a first-class hypothesis instead of assuming the 37.5% raw weight will survive S3.
 
+## Live target-encoding frontier
+
+A separate leakage-safe exact-value target-encoding frontier was executed on all **691,369** labeled rows with aligned five-fold OOF predictions. It is a leaderboard-routing track, not an S3 promotion claim.
+
+Current full-data OOF results:
+
+| stream | OOF AUC |
+|---|---:|
+| smoothing-10 inner-5 LightGBM | 0.967581878 |
+| smoothing-10 inner-5 XGBoost | 0.967688247 |
+| smoothing-10 inner-10 LightGBM | 0.967644407 |
+| smoothing-20 inner-5 LightGBM | 0.967570470 |
+| inner-5 LGB/XGB honest rotating blend | 0.967825597 |
+| inner-10 LGB/XGB honest rotating blend | 0.967867071 |
+| **four-stream honest rotating blend** | **0.967893241** |
+
+The four-stream mean weights are:
+
+```text
+0.15 × rank(smoothing-10 inner-5 LGB)
+0.44 × rank(smoothing-10 inner-5 XGB)
+0.26 × rank(smoothing-10 inner-10 LGB)
+0.15 × rank(smoothing-20 inner-5 LGB)
+```
+
+The improvement over the simpler frontier is small, so the correct next step is a leaderboard contrast rather than another dense weight grid. The complete evidence, fold metrics, killed hypotheses, commands, and submission hashes are in [`docs/LIVE_FRONTIER_2026-08-17.md`](docs/LIVE_FRONTIER_2026-08-17.md).
+
+The reproducible runners are:
+
+```text
+experiments/live_frontier_candidate.py
+experiments/live_smoothing20_candidate.py
+experiments/te_innerfold_screen.py
+experiments/te_capacity_screen.py
+experiments/te_smoothing_diversity.py
+experiments/te_uncertainty_screen.py
+scripts/build_live_frontier_blend.py
+```
+
+A manual-only GitHub Actions entrypoint is available at `.github/workflows/live_frontier_manual.yml`.
+
 ## What v0.3 changes
 
 v0.3 turns the research codebase into an evidence-driven campaign engine while preserving the current winner until new ideas earn promotion.
@@ -258,6 +299,8 @@ After S3, the frozen Frontier streams are priced against the aligned public OOF 
 
 - v0.2 production contracts: implemented.
 - v0.3 package CLI + manifests: implemented on the current development release.
+- v0.3.1 Kaggle CPU notebook operations: implemented.
+- v0.3.2 live target-encoding frontier: implemented; leaderboard evidence pending.
 - mature frequency geometry / source-row augmentation: implemented, evidence pending execution.
 - authoritative S3: pending production GPU execution.
 - competition-winning status: **not claimed until leaderboard and S3 evidence support it**.
