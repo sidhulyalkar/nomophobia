@@ -1,4 +1,4 @@
-name: naji18-lb97097-audit
+name: naji-public-blend-frontier-audit
 
 on:
   pull_request:
@@ -19,43 +19,39 @@ jobs:
         with:
           python-version: '3.11'
       - run: pip install kagglehub numpy pandas scikit-learn scipy
-      - name: Download labels and public blend dataset
+      - name: Download labels and audit every public blend
         run: |
-          mkdir -p data artifacts/naji18
+          mkdir -p data artifacts/naji_frontier
           curl -fL --retry 5 https://raw.githubusercontent.com/s23010843/Predicting-Smartphone-Addiction/main/input/train.csv -o data/train.csv
           curl -fL --retry 5 https://raw.githubusercontent.com/s23010843/Predicting-Smartphone-Addiction/main/input/test.csv -o data/test.csv
           python - <<'PY'
-          import json
+          import json,re,shutil
           from pathlib import Path
-          import numpy as np, pandas as pd, kagglehub
-          from scipy.stats import rankdata
+          import numpy as np,pandas as pd,kagglehub
           from sklearn.metrics import roc_auc_score
           root=Path(kagglehub.dataset_download('najiama/predicting-smartphone-addiction-oof-submission-csv'))
-          print('ROOT',root)
-          files=sorted([p for p in root.rglob('*') if p.is_file()])
-          print('FILES',[(str(p.relative_to(root)),p.stat().st_size) for p in files])
-          oofp=next((p for p in files if p.name=='18_blend_oof_predictions.csv'),None)
-          subp=next((p for p in files if p.name=='18_blend_submission.csv'),None)
-          if oofp is None or subp is None:
-              raise RuntimeError('18_blend files not present')
-          tr=pd.read_csv('data/train.csv',usecols=['id','addicted_label'])
-          te=pd.read_csv('data/test.csv',usecols=['id'])
-          o=pd.read_csv(oofp); s=pd.read_csv(subp)
-          if list(o.columns)!=['id','addicted_label'] or list(s.columns)!=['id','addicted_label']:
-              raise RuntimeError(f'unexpected columns oof={list(o.columns)} sub={list(s.columns)}')
-          if len(o)!=len(tr) or not np.array_equal(o.id.to_numpy(),tr.id.to_numpy()): raise RuntimeError('OOF IDs misaligned')
-          if len(s)!=len(te) or not np.array_equal(s.id.to_numpy(),te.id.to_numpy()): raise RuntimeError('test IDs misaligned')
-          y=tr.addicted_label.to_numpy(int); p=o.addicted_label.to_numpy(float); q=s.addicted_label.to_numpy(float)
-          if not np.isfinite(p).all() or not np.isfinite(q).all(): raise RuntimeError('non-finite predictions')
-          auc=float(roc_auc_score(y,p))
-          out=Path('artifacts/naji18')
-          o.to_csv(out/'oof_18_blend.csv',index=False); s.to_csv(out/'submission_18_blend.csv',index=False)
-          np.save(out/'oof_18_blend.npy',p); np.save(out/'test_18_blend.npy',q)
-          report={'source':'najiama/predicting-smartphone-addiction-oof-submission-csv','oof_auc':auc,'train_rows':len(o),'test_rows':len(s),'unique_oof':int(o.addicted_label.nunique()),'unique_test':int(s.addicted_label.nunique()),'oof_min':float(p.min()),'oof_max':float(p.max()),'test_min':float(q.min()),'test_max':float(q.max())}
-          (out/'summary.json').write_text(json.dumps(report,indent=2)+'\n'); print(json.dumps(report,indent=2))
+          tr=pd.read_csv('data/train.csv',usecols=['id','addicted_label']);te=pd.read_csv('data/test.csv',usecols=['id']);y=tr.addicted_label.to_numpy(int)
+          rows=[];pairs=[]
+          for p in sorted(root.rglob('*oof_predictions.csv')):
+              m=re.match(r'(\d+)(?:_blend)?_oof_predictions\.csv$',p.name)
+              if not m:continue
+              version=int(m.group(1));o=pd.read_csv(p)
+              if len(o)!=len(tr) or not np.array_equal(o.id.to_numpy(),tr.id.to_numpy()):continue
+              auc=float(roc_auc_score(y,o.addicted_label.to_numpy(float)))
+              subs=list(root.glob(f'{version:02d}*_submission.csv'))+list(root.glob(f'{version:02d}*_submission.csv.csv'))
+              sub=None
+              for q in subs:
+                  s=pd.read_csv(q)
+                  if len(s)==len(te) and np.array_equal(s.id.to_numpy(),te.id.to_numpy()):sub=q;break
+              rows.append({'version':version,'oof_file':p.name,'oof_auc':auc,'submission_file':sub.name if sub else None})
+              if sub:pairs.append((version,auc,p,sub))
+          rows.sort(key=lambda z:z['version']);best=max(pairs,key=lambda z:z[1]);version,auc,oofp,subp=best
+          out=Path('artifacts/naji_frontier');shutil.copy2(oofp,out/'best_oof.csv');shutil.copy2(subp,out/'best_submission.csv');pd.DataFrame(rows).to_csv(out/'lineage.csv',index=False)
+          summary={'source':'najiama/predicting-smartphone-addiction-oof-submission-csv','lineage':rows,'best_by_oof':{'version':version,'oof_auc':auc,'oof_file':oofp.name,'submission_file':subp.name}}
+          (out/'summary.json').write_text(json.dumps(summary,indent=2)+'\n');print(json.dumps(summary,indent=2))
           PY
       - uses: actions/upload-artifact@v4
         with:
-          name: naji18-lb97097-audit
-          path: artifacts/naji18
+          name: naji-public-blend-frontier-audit
+          path: artifacts/naji_frontier
           retention-days: 7
