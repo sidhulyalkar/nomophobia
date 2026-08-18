@@ -36,14 +36,16 @@ jobs:
               m=re.match(r'(\d+)(?:_blend)?_oof_predictions\.csv$',p.name)
               if not m:continue
               version=int(m.group(1));o=pd.read_csv(p)
-              if len(o)!=len(tr) or not np.array_equal(o.id.to_numpy(),tr.id.to_numpy()):continue
-              auc=float(roc_auc_score(y,o.addicted_label.to_numpy(float)))
+              if len(o)!=len(tr) or 'id' not in o or not np.array_equal(o.id.to_numpy(),tr.id.to_numpy()):continue
+              pred_cols=[c for c in o.columns if c!='id' and pd.api.types.is_numeric_dtype(o[c])]
+              if len(pred_cols)!=1:continue
+              auc=float(roc_auc_score(y,o[pred_cols[0]].to_numpy(float)))
               subs=list(root.glob(f'{version:02d}*_submission.csv'))+list(root.glob(f'{version:02d}*_submission.csv.csv'))
               sub=None
               for q in subs:
                   s=pd.read_csv(q)
-                  if len(s)==len(te) and np.array_equal(s.id.to_numpy(),te.id.to_numpy()):sub=q;break
-              rows.append({'version':version,'oof_file':p.name,'oof_auc':auc,'submission_file':sub.name if sub else None})
+                  if len(s)==len(te) and 'id' in s and np.array_equal(s.id.to_numpy(),te.id.to_numpy()):sub=q;break
+              rows.append({'version':version,'oof_file':p.name,'prediction_column':pred_cols[0],'oof_auc':auc,'submission_file':sub.name if sub else None})
               if sub:pairs.append((version,auc,p,sub))
           rows.sort(key=lambda z:z['version']);best=max(pairs,key=lambda z:z[1]);version,auc,oofp,subp=best
           out=Path('artifacts/naji_frontier');shutil.copy2(oofp,out/'best_oof.csv');shutil.copy2(subp,out/'best_submission.csv');pd.DataFrame(rows).to_csv(out/'lineage.csv',index=False)
