@@ -43,6 +43,8 @@ Held-fold selections were:
 
 The cross-fitted honest OOF AUC is **0.9681718649**, a **+0.0002865868** gain over the quad anchor. Every held fold improves. Coordinate-wise median deployment weights are **0.20 LGB + 0.10 XGB**, giving a full OOF AUC of **0.9681744753**.
 
+A paired DeLong test on the cross-fitted honest prediction gives standard error approximately **1.62e-5**, a 95% interval for the AUC gain of approximately **[+0.0002548, +0.0003184]**, and p approximately **8.8e-70**. This is a paired comparison of the same 691k rows, not an independent-model confidence interval.
+
 ## Stability gates
 
 The frozen deployment correction is positive in every tested slice:
@@ -51,7 +53,7 @@ The frozen deployment correction is positive in every tested slice:
 - contiguous sorted-ID partitions: 5/5, 10/10, and 20/20 wins;
 - the worst measured contiguous 20-block delta is still positive at approximately **+0.0001514 AUC**.
 
-The composer therefore fails closed: if nested held-fold performance or any configured stability family stops being uniformly positive, deployment residual weights are set to zero and the anchor is emitted instead.
+The composer therefore fails closed: if nested held-fold performance, the frozen deployment OOF gain, or any configured stability family stops being uniformly positive, deployment residual weights are set to zero and the anchor is emitted instead.
 
 ## Current submission artifact
 
