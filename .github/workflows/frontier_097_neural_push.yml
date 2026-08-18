@@ -1,0 +1,51 @@
+name: frontier-097-neural-measurement
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - '.github/frontier-097-neural-trigger'
+
+permissions:
+  contents: read
+  actions: read
+
+jobs:
+  transformer:
+    runs-on: ubuntu-latest
+    timeout-minutes: 330
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: agent/frontier-097-compute
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+          cache: pip
+      - name: Install neural research dependencies
+        run: pip install -e '.[neural]'
+      - name: Acquire public competition mirror
+        run: |
+          git clone --depth 1 https://github.com/s23010843/Predicting-Smartphone-Addiction.git /tmp/datarepo
+          mkdir -p /tmp/s6e8
+          cp /tmp/datarepo/input/{train.csv,test.csv,sample_submission.csv} /tmp/s6e8/
+      - name: Download validated quad anchor
+        uses: actions/download-artifact@v4
+        with:
+          name: frontier-quad-anchor
+          path: /tmp/anchor
+          run-id: 32194910518
+          github-token: ${{ github.token }}
+      - name: Run fixed-schedule transformer residual
+        run: |
+          python experiments/frontier_transformer_residual.py \
+            --data-dir /tmp/s6e8 \
+            --anchor-oof /tmp/anchor/oof_anchor.csv \
+            --anchor-test /tmp/anchor/submission_anchor.csv \
+            --epochs 4 --batch-size 2048 \
+            --out-dir results
+      - uses: actions/upload-artifact@v4
+        with:
+          name: frontier-transformer-fixed4
+          path: results
+          retention-days: 7
