@@ -3,8 +3,6 @@ name: frontier-097-compute-pr
 on:
   pull_request:
     branches: [agent/frontier-097-campaign]
-    paths:
-      - '.github/workflows/frontier_097_compute_pr.yml'
 
 permissions:
   contents: read
@@ -58,20 +56,28 @@ jobs:
           mkdir -p /tmp/s6e8
           cp /tmp/datarepo/input/{train.csv,test.csv,sample_submission.csv} /tmp/s6e8/
       - uses: actions/download-artifact@v4
-        with: {name: frontier-i5, path: /tmp/i5}
+        with:
+          name: frontier-i5
+          path: /tmp/i5
       - uses: actions/download-artifact@v4
-        with: {name: frontier-i10, path: /tmp/i10}
+        with:
+          name: frontier-i10
+          path: /tmp/i10
       - uses: actions/download-artifact@v4
-        with: {name: frontier-s20, path: /tmp/s20}
+        with:
+          name: frontier-s20
+          path: /tmp/s20
       - name: Build aligned four-stream anchor
         run: |
           python scripts/build_live_frontier_anchor.py --data-dir /tmp/s6e8 \
             --oof-s10-i5 /tmp/i5/oof.csv --oof-s10-i10 /tmp/i10/oof.csv --oof-s20-i5 /tmp/s20/oof_s20.csv \
             --test-lgb-s10-i5 /tmp/i5/submission_lgb.csv --test-xgb-s10-i5 /tmp/i5/submission_xgb.csv \
-            --test-lgb-s10-i10 /tmp/i10/submission_lgb.csv --test-lgb-s20-i5 /tmp/s20/submission_s20.csv \
-            --out-dir results
+            --test-lgb-s10-i10 /tmp/i10/submission_lgb.csv --test-lgb-s20-i5 /tmp/s20/submission_s20.csv --out-dir results
       - uses: actions/upload-artifact@v4
-        with: {name: frontier-quad-anchor, path: results, retention-days: 7}
+        with:
+          name: frontier-quad-anchor
+          path: results
+          retention-days: 7
 
   contrast:
     needs: anchor
@@ -93,7 +99,9 @@ jobs:
           mkdir -p /tmp/s6e8
           cp /tmp/datarepo/input/{train.csv,test.csv,sample_submission.csv} /tmp/s6e8/
       - uses: actions/download-artifact@v4
-        with: {name: frontier-quad-anchor, path: /tmp/anchor}
+        with:
+          name: frontier-quad-anchor
+          path: /tmp/anchor
       - name: Run matched fixed-schedule contrast
         shell: bash
         run: |
