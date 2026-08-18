@@ -1,18 +1,13 @@
-name: live-leaderboard-candidate
-
+name: te-smoothing-diversity
 on:
   push:
-    branches:
-      - agent/live-leaderboard-v1
+    branches: [agent/te-smoothing-diversity]
   pull_request:
-    branches:
-      - main
-
+    branches: [main]
 permissions:
   contents: read
-
 jobs:
-  frontier:
+  screen:
     runs-on: ubuntu-latest
     timeout-minutes: 120
     steps:
@@ -22,35 +17,16 @@ jobs:
           python-version: '3.11'
           cache: pip
       - name: Install modeling stack
-        run: |
-          python -m pip install --upgrade pip
-          pip install 'numpy>=2,<3' 'pandas>=2.2,<3' 'scikit-learn>=1.5,<2' 'lightgbm>=4.3,<5' 'xgboost>=2.1,<4'
-      - name: Acquire public mirror of competition CSVs
+        run: pip install 'numpy>=2,<3' 'pandas>=2.2,<3' 'scikit-learn>=1.5,<2' 'lightgbm>=4.3,<5' 'xgboost>=2.1,<4'
+      - name: Acquire public mirror
         run: |
           git clone --depth 1 https://github.com/s23010843/Predicting-Smartphone-Addiction.git /tmp/s6e8-data
           mkdir -p /tmp/s6e8
           cp /tmp/s6e8-data/input/train.csv /tmp/s6e8/train.csv
-          cp /tmp/s6e8-data/input/test.csv /tmp/s6e8/test.csv
-          cp /tmp/s6e8-data/input/sample_submission.csv /tmp/s6e8/sample_submission.csv
-          python - <<'PY'
-          import pandas as pd
-          from pathlib import Path
-          p=Path('/tmp/s6e8')
-          tr=pd.read_csv(p/'train.csv', nrows=5)
-          te=pd.read_csv(p/'test.csv', nrows=5)
-          print('train columns', list(tr.columns))
-          print('test columns', list(te.columns))
-          PY
-      - name: Fit frontier candidate
-        run: |
-          python experiments/live_frontier_candidate.py --data-dir /tmp/s6e8 --out-dir live_results --folds 5 --inner-folds 5 --lgb-estimators 4500 --xgb-estimators 3000
-      - name: Compress reusable prediction streams
-        run: |
-          gzip -9 -k live_results/submission_next.csv
-          gzip -9 -k live_results/oof.csv
+      - name: Run screen
+        run: python experiments/te_smoothing_diversity.py --data-dir /tmp/s6e8 --out te_smoothing_diversity.json --rows 120000 --estimators 1200
       - uses: actions/upload-artifact@v4
         with:
-          name: live-frontier-v1
-          path: live_results/
+          name: te-smoothing-diversity
+          path: te_smoothing_diversity.json
           retention-days: 7
-          compression-level: 6
