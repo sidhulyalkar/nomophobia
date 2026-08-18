@@ -12,6 +12,12 @@ import pandas as pd
 ID = "id"
 TARGET = "addicted_label"
 EXPECTED_TEST_ROWS = 296302
+DEFAULT_WEIGHTS = {
+    "lgb_s10_i5": 0.15,
+    "xgb_s10_i5": 0.44,
+    "lgb_s10_i10": 0.26,
+    "lgb_s20_i5": 0.15,
+}
 
 
 def rank01(values: pd.Series) -> np.ndarray:
@@ -33,31 +39,49 @@ def validate_submission(frame: pd.DataFrame) -> None:
 
 def main() -> None:
     ap = argparse.ArgumentParser(
-        description="Build a deterministic percentile-rank blend from two test submissions."
+        description="Build the validated four-stream NOMOPHOBIA live-frontier rank blend."
     )
-    ap.add_argument("--lgb", required=True, help="inner-10 LightGBM submission CSV")
-    ap.add_argument("--xgb", required=True, help="XGBoost submission CSV")
-    ap.add_argument("--lgb-weight", type=float, default=0.46)
-    ap.add_argument("--out", default="submission_nomophobia_frontier_i10_xgb_v1.csv")
+    ap.add_argument("--lgb-s10-i5", required=True)
+    ap.add_argument("--xgb-s10-i5", required=True)
+    ap.add_argument("--lgb-s10-i10", required=True)
+    ap.add_argument("--lgb-s20-i5", required=True)
+    ap.add_argument("--w-lgb-s10-i5", type=float, default=DEFAULT_WEIGHTS["lgb_s10_i5"])
+    ap.add_argument("--w-xgb-s10-i5", type=float, default=DEFAULT_WEIGHTS["xgb_s10_i5"])
+    ap.add_argument("--w-lgb-s10-i10", type=float, default=DEFAULT_WEIGHTS["lgb_s10_i10"])
+    ap.add_argument("--w-lgb-s20-i5", type=float, default=DEFAULT_WEIGHTS["lgb_s20_i5"])
+    ap.add_argument("--out", default="submission_nomophobia_frontier_quad_v2.csv")
     args = ap.parse_args()
 
-    if not 0.0 <= args.lgb_weight <= 1.0:
-        raise ValueError("--lgb-weight must be in [0, 1]")
+    paths = {
+        "lgb_s10_i5": args.lgb_s10_i5,
+        "xgb_s10_i5": args.xgb_s10_i5,
+        "lgb_s10_i10": args.lgb_s10_i10,
+        "lgb_s20_i5": args.lgb_s20_i5,
+    }
+    weights = {
+        "lgb_s10_i5": args.w_lgb_s10_i5,
+        "xgb_s10_i5": args.w_xgb_s10_i5,
+        "lgb_s10_i10": args.w_lgb_s10_i10,
+        "lgb_s20_i5": args.w_lgb_s20_i5,
+    }
+    if any(weight < 0 for weight in weights.values()):
+        raise ValueError("blend weights must be non-negative")
+    if not np.isclose(sum(weights.values()), 1.0, atol=1e-12):
+        raise ValueError(f"blend weights must sum to 1.0, got {sum(weights.values())}")
 
-    lgb = pd.read_csv(args.lgb)
-    xgb = pd.read_csv(args.xgb)
-    validate_submission(lgb)
-    validate_submission(xgb)
-    if not lgb[ID].equals(xgb[ID]):
-        raise ValueError("LGB and XGB submission IDs/order differ")
+    frames = {name: pd.read_csv(path) for name, path in paths.items()}
+    base = frames["xgb_s10_i5"]
+    validate_submission(base)
+    for name, frame in frames.items():
+        validate_submission(frame)
+        if not frame[ID].equals(base[ID]):
+            raise ValueError(f"{name} IDs/order differ from XGBoost stream")
 
-    blend = pd.DataFrame(
-        {
-            ID: lgb[ID].to_numpy(),
-            TARGET: args.lgb_weight * rank01(lgb[TARGET])
-            + (1.0 - args.lgb_weight) * rank01(xgb[TARGET]),
-        }
-    )
+    prediction = np.zeros(len(base), dtype=np.float64)
+    for name, weight in weights.items():
+        prediction += weight * rank01(frames[name][TARGET])
+
+    blend = pd.DataFrame({ID: base[ID].to_numpy(), TARGET: prediction})
     validate_submission(blend)
 
     out = Path(args.out)
@@ -72,13 +96,11 @@ def main() -> None:
     meta = {
         "file": out.name,
         "method": "percentile-rank blend",
-        "lgb_weight": args.lgb_weight,
-        "xgb_weight": 1.0 - args.lgb_weight,
+        "weights": weights,
         "rows": len(round_trip),
         "sha256": digest,
     }
-    meta_path = out.with_suffix(".json")
-    meta_path.write_text(json.dumps(meta, indent=2) + "\n")
+    out.with_suffix(".json").write_text(json.dumps(meta, indent=2) + "\n")
     print(json.dumps(meta, indent=2))
 
 
