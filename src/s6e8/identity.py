@@ -35,6 +35,19 @@ def roundtrip_float_key(series: pd.Series) -> pd.Series:
     return pd.Series(out, index=series.index, dtype="string")
 
 
+def add_exact_float_categories(
+    df: pd.DataFrame,
+    *,
+    columns: Iterable[str] = NUM_COLS,
+) -> pd.DataFrame:
+    """Add only the exact binary64 category identity for each numeric predictor."""
+    additions = {
+        f"{column}__f64_key": roundtrip_float_key(df[column].astype("float64"))
+        for column in columns
+    }
+    return pd.concat([df.copy(), pd.DataFrame(additions, index=df.index)], axis=1)
+
+
 def add_screen_relation_features(df: pd.DataFrame) -> pd.DataFrame:
     """Add a compact target-free screen-allocation relation block."""
     daily = df["daily_screen_time_hours"]
@@ -122,6 +135,11 @@ def build_contrast_feature_frame(
     frame = df[RAW_COLS].copy()
     if feature_set == "raw":
         return frame
+    if feature_set in {"exact", "exact_screen"}:
+        if not include_exact_categories:
+            raise ValueError("exact feature sets require exact categorical support")
+        frame = add_exact_float_categories(frame)
+        return add_screen_relation_features(frame) if feature_set == "exact_screen" else frame
     if feature_set == "identity":
         return add_identity_digit_features(
             frame, include_exact_categories=include_exact_categories
@@ -135,7 +153,7 @@ def build_contrast_feature_frame(
             )
         )
     raise ValueError(
-        "feature_set must be one of raw, identity, screen, identity_screen"
+        "feature_set must be one of raw, exact, exact_screen, identity, screen, identity_screen"
     )
 
 
