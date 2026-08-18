@@ -11,6 +11,7 @@ import pandas as pd
 
 from s6e8.config import ID_COL, TARGET
 from s6e8.contrast import rank01
+from s6e8.evaluate import delong_test
 from s6e8.winner import (
     all_stability_slices_positive,
     compose_rank_score,
@@ -99,7 +100,11 @@ def main() -> None:
 
     decision = nested_residual_selection(y, anchor_oof, directions_oof, folds, grids)
     stress = stability_diagnostics(y, anchor_oof, decision["deploy_oof"], ids)
-    accepted = bool(decision["accepted"] and all_stability_slices_positive(stress))
+    accepted = bool(
+        decision["accepted"]
+        and decision["deploy_oof_gain"] > 0
+        and all_stability_slices_positive(stress)
+    )
     deploy_weights = decision["deploy_weights"] if accepted else {
         "lgb_identity_screen": 0.0,
         "xgb_identity_screen": 0.0,
@@ -129,6 +134,7 @@ def main() -> None:
         "version": "frontier-residual-winner-v2",
         "accepted": accepted,
         "selection": serializable_decision,
+        "honest_delong_p": float(delong_test(y, anchor_oof, decision["honest_oof"])),
         "deploy_weights": deploy_weights,
         "direction_corr_oof": float(np.corrcoef(lgb_oof, xgb_oof)[0, 1]),
         "direction_corr_test": float(np.corrcoef(lgb_test, xgb_test)[0, 1]),
