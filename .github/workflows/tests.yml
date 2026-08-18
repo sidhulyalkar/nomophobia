@@ -11,6 +11,10 @@ concurrency:
   group: tests-${{ github.workflow }}-${{ github.ref }}
   cancel-in-progress: true
 
+env:
+  DATA_DIR: data
+  PYTHONUNBUFFERED: "1"
+
 jobs:
   test:
     strategy:
@@ -36,3 +40,258 @@ jobs:
           nomophobia --help
       - name: Test
         run: pytest -q
+
+  research-anchor:
+    if: github.event_name == 'pull_request' && github.head_ref == 'agent/frontier-097-campaign'
+    runs-on: ubuntu-latest
+    timeout-minutes: 240
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+          cache: pip
+      - name: Install research dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -e ".[diversity]"
+      - name: Download and validate public mirror
+        run: |
+          mkdir -p "$DATA_DIR"
+          base="https://raw.githubusercontent.com/s23010843/Predicting-Smartphone-Addiction/main/input"
+          curl -fL --retry 5 "$base/train.csv" -o "$DATA_DIR/train.csv"
+          curl -fL --retry 5 "$base/test.csv" -o "$DATA_DIR/test.csv"
+          curl -fL --retry 5 "$base/sample_submission.csv" -o "$DATA_DIR/sample_submission.csv"
+          python -m s6e8 validate --data-dir "$DATA_DIR"
+      - name: Build full-data inner-10 target-encoding anchor
+        run: |
+          python experiments/live_frontier_candidate.py \
+            --data-dir "$DATA_DIR" \
+            --out-dir artifacts/anchor_i10 \
+            --folds 5 --inner-folds 10 --smoothing 10 \
+            --seed 20260801 --lgb-estimators 4500 --xgb-estimators 3000
+      - name: Assert production anchor
+        run: |
+          python - <<'PY'
+          import json, pathlib
+          d=json.loads(pathlib.Path('artifacts/anchor_i10/decision.json').read_text())
+          print(json.dumps(d,indent=2))
+          assert d['auc']['honest_blend'] >= 0.9675, d['auc']
+          PY
+      - uses: actions/upload-artifact@v4
+        with:
+          name: frontier-anchor-i10
+          path: artifacts/anchor_i10
+          retention-days: 7
+
+  research-lgb:
+    if: github.event_name == 'pull_request' && github.head_ref == 'agent/frontier-097-campaign'
+    needs: research-anchor
+    runs-on: ubuntu-latest
+    timeout-minutes: 240
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+          cache: pip
+      - run: |
+          python -m pip install --upgrade pip
+          pip install -e ".[diversity]"
+      - name: Download data
+        run: |
+          mkdir -p "$DATA_DIR"; base="https://raw.githubusercontent.com/s23010843/Predicting-Smartphone-Addiction/main/input"
+          curl -fL --retry 5 "$base/train.csv" -o "$DATA_DIR/train.csv"
+          curl -fL --retry 5 "$base/test.csv" -o "$DATA_DIR/test.csv"
+          curl -fL --retry 5 "$base/sample_submission.csv" -o "$DATA_DIR/sample_submission.csv"
+      - uses: actions/download-artifact@v4
+        with:
+          name: frontier-anchor-i10
+          path: artifacts/anchor_i10
+      - name: Fixed-900 LGB identity plus screen contrast
+        run: |
+          python experiments/frontier_contrast_campaign.py \
+            --data-dir "$DATA_DIR" --anchor-oof artifacts/anchor_i10/oof.csv \
+            --anchor-test artifacts/anchor_i10/submission_blend.csv \
+            --family lgb --treatment identity_screen --rounds 900 --seed 20260801 \
+            --out-dir artifacts/contrast_lgb_identity_screen
+      - uses: actions/upload-artifact@v4
+        with:
+          name: contrast-lgb-identity-screen
+          path: artifacts/contrast_lgb_identity_screen
+          retention-days: 7
+
+  research-xgb:
+    if: github.event_name == 'pull_request' && github.head_ref == 'agent/frontier-097-campaign'
+    needs: research-anchor
+    runs-on: ubuntu-latest
+    timeout-minutes: 300
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+          cache: pip
+      - run: |
+          python -m pip install --upgrade pip
+          pip install -e ".[diversity]"
+      - name: Download data
+        run: |
+          mkdir -p "$DATA_DIR"; base="https://raw.githubusercontent.com/s23010843/Predicting-Smartphone-Addiction/main/input"
+          curl -fL --retry 5 "$base/train.csv" -o "$DATA_DIR/train.csv"
+          curl -fL --retry 5 "$base/test.csv" -o "$DATA_DIR/test.csv"
+          curl -fL --retry 5 "$base/sample_submission.csv" -o "$DATA_DIR/sample_submission.csv"
+      - uses: actions/download-artifact@v4
+        with:
+          name: frontier-anchor-i10
+          path: artifacts/anchor_i10
+      - name: Fixed-1500 XGB identity plus screen contrast
+        run: |
+          python experiments/frontier_contrast_campaign.py \
+            --data-dir "$DATA_DIR" --anchor-oof artifacts/anchor_i10/oof.csv \
+            --anchor-test artifacts/anchor_i10/submission_blend.csv \
+            --family xgb --treatment identity_screen --rounds 1500 --seed 20260801 \
+            --out-dir artifacts/contrast_xgb_identity_screen
+      - uses: actions/upload-artifact@v4
+        with:
+          name: contrast-xgb-identity-screen
+          path: artifacts/contrast_xgb_identity_screen
+          retention-days: 7
+
+  research-cat-exact:
+    if: github.event_name == 'pull_request' && github.head_ref == 'agent/frontier-097-campaign'
+    needs: research-anchor
+    runs-on: ubuntu-latest
+    timeout-minutes: 330
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+          cache: pip
+      - run: |
+          python -m pip install --upgrade pip
+          pip install -e ".[diversity]"
+      - name: Download data
+        run: |
+          mkdir -p "$DATA_DIR"; base="https://raw.githubusercontent.com/s23010843/Predicting-Smartphone-Addiction/main/input"
+          curl -fL --retry 5 "$base/train.csv" -o "$DATA_DIR/train.csv"
+          curl -fL --retry 5 "$base/test.csv" -o "$DATA_DIR/test.csv"
+          curl -fL --retry 5 "$base/sample_submission.csv" -o "$DATA_DIR/sample_submission.csv"
+      - uses: actions/download-artifact@v4
+        with:
+          name: frontier-anchor-i10
+          path: artifacts/anchor_i10
+      - name: Enable exact treatment choice
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+          p=Path('experiments/frontier_contrast_campaign.py'); s=p.read_text()
+          old='choices=["identity", "screen", "identity_screen"]'
+          new='choices=["exact", "exact_screen", "identity", "screen", "identity_screen"]'
+          if old not in s: raise SystemExit('choice declaration changed unexpectedly')
+          p.write_text(s.replace(old,new))
+          PY
+      - name: Fixed-4000 exact-value CatBoost contrast
+        run: |
+          python experiments/frontier_contrast_campaign.py \
+            --data-dir "$DATA_DIR" --anchor-oof artifacts/anchor_i10/oof.csv \
+            --anchor-test artifacts/anchor_i10/submission_blend.csv \
+            --family cat --treatment exact --rounds 4000 --seed 20260801 \
+            --out-dir artifacts/contrast_cat_exact
+      - uses: actions/upload-artifact@v4
+        with:
+          name: contrast-cat-exact
+          path: artifacts/contrast_cat_exact
+          retention-days: 7
+
+  research-cat-screen:
+    if: github.event_name == 'pull_request' && github.head_ref == 'agent/frontier-097-campaign'
+    needs: research-anchor
+    runs-on: ubuntu-latest
+    timeout-minutes: 330
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+          cache: pip
+      - run: |
+          python -m pip install --upgrade pip
+          pip install -e ".[diversity]"
+      - name: Download data
+        run: |
+          mkdir -p "$DATA_DIR"; base="https://raw.githubusercontent.com/s23010843/Predicting-Smartphone-Addiction/main/input"
+          curl -fL --retry 5 "$base/train.csv" -o "$DATA_DIR/train.csv"
+          curl -fL --retry 5 "$base/test.csv" -o "$DATA_DIR/test.csv"
+          curl -fL --retry 5 "$base/sample_submission.csv" -o "$DATA_DIR/sample_submission.csv"
+      - uses: actions/download-artifact@v4
+        with:
+          name: frontier-anchor-i10
+          path: artifacts/anchor_i10
+      - name: Fixed-4000 CatBoost screen-relation contrast
+        run: |
+          python experiments/frontier_contrast_campaign.py \
+            --data-dir "$DATA_DIR" --anchor-oof artifacts/anchor_i10/oof.csv \
+            --anchor-test artifacts/anchor_i10/submission_blend.csv \
+            --family cat --treatment screen --rounds 4000 --seed 20260801 \
+            --out-dir artifacts/contrast_cat_screen
+      - uses: actions/upload-artifact@v4
+        with:
+          name: contrast-cat-screen
+          path: artifacts/contrast_cat_screen
+          retention-days: 7
+
+  research-finalize:
+    if: always() && github.event_name == 'pull_request' && github.head_ref == 'agent/frontier-097-campaign'
+    needs: [research-anchor, research-lgb, research-xgb, research-cat-exact, research-cat-screen]
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+          cache: pip
+      - run: |
+          python -m pip install --upgrade pip
+          pip install -e ".[diversity]"
+      - name: Download data
+        run: |
+          mkdir -p "$DATA_DIR"; base="https://raw.githubusercontent.com/s23010843/Predicting-Smartphone-Addiction/main/input"
+          curl -fL --retry 5 "$base/train.csv" -o "$DATA_DIR/train.csv"
+          curl -fL --retry 5 "$base/test.csv" -o "$DATA_DIR/test.csv"
+          curl -fL --retry 5 "$base/sample_submission.csv" -o "$DATA_DIR/sample_submission.csv"
+      - uses: actions/download-artifact@v4
+        with: {name: frontier-anchor-i10, path: artifacts/anchor_i10}
+      - uses: actions/download-artifact@v4
+        continue-on-error: true
+        with: {name: contrast-lgb-identity-screen, path: artifacts/contrast_lgb_identity_screen}
+      - uses: actions/download-artifact@v4
+        continue-on-error: true
+        with: {name: contrast-xgb-identity-screen, path: artifacts/contrast_xgb_identity_screen}
+      - uses: actions/download-artifact@v4
+        continue-on-error: true
+        with: {name: contrast-cat-exact, path: artifacts/contrast_cat_exact}
+      - uses: actions/download-artifact@v4
+        continue-on-error: true
+        with: {name: contrast-cat-screen, path: artifacts/contrast_cat_screen}
+      - name: Select and compose only honestly accepted residuals
+        run: |
+          python scripts/finalize_frontier_campaign.py \
+            --data-dir "$DATA_DIR" --anchor-dir artifacts/anchor_i10 \
+            --contrast-dirs artifacts/contrast_lgb_identity_screen artifacts/contrast_xgb_identity_screen artifacts/contrast_cat_exact artifacts/contrast_cat_screen \
+            --composer-out artifacts/composite --out-dir artifacts/final
+      - uses: actions/upload-artifact@v4
+        with:
+          name: frontier-097-final-research
+          path: |
+            artifacts/final
+            artifacts/anchor_i10/decision.json
+            artifacts/contrast_lgb_identity_screen/decision.json
+            artifacts/contrast_xgb_identity_screen/decision.json
+            artifacts/contrast_cat_exact/decision.json
+            artifacts/contrast_cat_screen/decision.json
+            artifacts/composite/decision.json
+          if-no-files-found: warn
+          retention-days: 14
