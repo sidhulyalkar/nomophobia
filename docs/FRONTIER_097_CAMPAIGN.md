@@ -6,7 +6,7 @@ The objective is not to tune the existing four-stream TE blend more finely. Its 
 
 ## Why 0.97+ is a credible leaderboard target
 
-Public S6E8 work has already reported reproducible public scores above 0.9709. The strongest progression did not come from a single dramatically better standalone model. It came from a strong aligned anchor plus small residual directions from exact-value CatBoost, numeric identity/digit views, screen-relation features, model-family contrasts, fixed-schedule lookup/neural members, and target-free orthogonalization.
+Public S6E8 work has already reported public scores above 0.9709. The strongest progression did not come from a single dramatically better standalone model. It came from a strong aligned anchor plus small residual directions from exact-value CatBoost, numeric identity/digit views, screen-relation features, model-family contrasts, fixed-schedule lookup/neural members, and target-free orthogonalization.
 
 That evidence changes the optimization problem:
 
@@ -19,6 +19,10 @@ That evidence changes the optimization problem:
 No specific public score is guaranteed. The 0.97 threshold is realistic because it has been crossed publicly, while our current self-contained TE OOF score is still in the strong standalone-tree basin rather than the mature ensemble basin.
 
 ## New implementation
+
+### `scripts/build_live_frontier_anchor.py`
+
+Materializes the four-stream frontier as both an aligned OOF anchor and a validated test submission. The OOF side uses the already-recorded held-fold rotation weights; the test side uses the frozen mean weights. This closes an important operational gap in the older `build_live_frontier_blend.py`, which only emitted the test submission.
 
 ### `src/s6e8/identity.py`
 
@@ -62,12 +66,7 @@ There is deliberately **no outer-fold early stopping**. Raw-control predictions 
 
 ### `experiments/frontier_direction_composer.py`
 
-Combines only directions that have already earned further testing. Two modes are supported:
-
-- `equal_standardized`: OOF-standardize each direction and average them;
-- `sequential_orthogonal`: remove target-free linear overlap with earlier directions, standardize, then average.
-
-Projection coefficients and normalization statistics are learned from OOF covariate geometry and frozen before application to test predictions.
+Combines only directions that have already earned further testing. `equal_standardized` averages OOF-standardized directions; `sequential_orthogonal` first removes target-free linear overlap with earlier directions. Projection coefficients and normalization statistics are learned from OOF covariate geometry and frozen before application to test predictions.
 
 ## Execution order
 
@@ -81,15 +80,39 @@ Submit the already-built controls before adding complexity:
 
 This estimates how the local TE basin transfers to the public leaderboard. Do not submit nearby 1-2% blend nudges.
 
-### Phase 1: matched LightGBM representation contrasts
+### Phase 0.5: materialize the aligned quad anchor
 
-Start with the cheapest high-value probes:
+The residual campaign must use the same four-stream frontier on train and test. Build it once from the completed full-data lanes:
+
+```bash
+python scripts/build_live_frontier_anchor.py \
+  --data-dir /kaggle/input/playground-series-s6e8 \
+  --oof-s10-i5 artifacts/live_frontier_i5/oof.csv \
+  --oof-s10-i10 artifacts/live_frontier_i10/oof.csv \
+  --oof-s20-i5 artifacts/live_s20/oof_s20.csv \
+  --test-lgb-s10-i5 artifacts/live_frontier_i5/submission_lgb.csv \
+  --test-xgb-s10-i5 artifacts/live_frontier_i5/submission_xgb.csv \
+  --test-lgb-s10-i10 artifacts/live_frontier_i10/submission_lgb.csv \
+  --test-lgb-s20-i5 artifacts/live_s20/submission_s20.csv \
+  --out-dir artifacts/frontier_quad_anchor
+```
+
+The next experiments then use:
+
+```text
+--anchor-oof  artifacts/frontier_quad_anchor/oof_anchor.csv
+--anchor-test artifacts/frontier_quad_anchor/submission_anchor.csv
+```
+
+The builder reports both honest rotating OOF AUC and fixed-mean OOF AUC. They should reproduce the recorded frontier values to numerical tolerance before any residual experiment is trusted.
+
+### Phase 1: matched LightGBM representation contrast
 
 ```bash
 python experiments/frontier_contrast_campaign.py \
   --data-dir /kaggle/input/playground-series-s6e8 \
-  --anchor-oof artifacts/live_frontier_i5/oof.csv \
-  --anchor-test artifacts/live_frontier_quad/submission.csv \
+  --anchor-oof artifacts/frontier_quad_anchor/oof_anchor.csv \
+  --anchor-test artifacts/frontier_quad_anchor/submission_anchor.csv \
   --family lgb \
   --treatment identity_screen \
   --rounds 900 \
@@ -103,23 +126,23 @@ If the combined treatment advances, split it into `identity` and `screen` only t
 ```bash
 python experiments/frontier_contrast_campaign.py \
   --data-dir /kaggle/input/playground-series-s6e8 \
-  --anchor-oof artifacts/live_frontier_i5/oof.csv \
-  --anchor-test artifacts/live_frontier_quad/submission.csv \
+  --anchor-oof artifacts/frontier_quad_anchor/oof_anchor.csv \
+  --anchor-test artifacts/frontier_quad_anchor/submission_anchor.csv \
   --family xgb \
   --treatment identity_screen \
   --rounds 1500 \
   --out-dir artifacts/contrast_xgb_identity_screen
 ```
 
-The XGB-minus-LGB *difference of differences* is often more valuable than either learner alone. Preserve both direction arrays even when standalone AUC is lower.
+Preserve the matched direction even if the standalone treatment does not win. The correction it induces can be more useful than the model itself.
 
-### Phase 3: exact-value CatBoost
+### Phase 3: exact-value CatBoost contrast
 
 ```bash
 python experiments/frontier_contrast_campaign.py \
   --data-dir /kaggle/input/playground-series-s6e8 \
-  --anchor-oof artifacts/live_frontier_i5/oof.csv \
-  --anchor-test artifacts/live_frontier_quad/submission.csv \
+  --anchor-oof artifacts/frontier_quad_anchor/oof_anchor.csv \
+  --anchor-test artifacts/frontier_quad_anchor/submission_anchor.csv \
   --family cat \
   --treatment identity_screen \
   --rounds 4000 \
@@ -127,15 +150,15 @@ python experiments/frontier_contrast_campaign.py \
   --out-dir artifacts/contrast_cat_identity_screen
 ```
 
-CatBoost receives exact binary64 category keys in the treatment view. LightGBM and XGBoost do not, which keeps the representation cost targeted to the learner most naturally suited to high-cardinality categorical identity.
+CatBoost receives exact binary64 category keys in the treatment view. LightGBM and XGBoost do not, which keeps the high-cardinality identity experiment targeted to the learner most naturally suited to it.
 
-### Phase 4: compose accepted directions
+### Phase 4: compose only accepted directions
 
 ```bash
 python experiments/frontier_direction_composer.py \
   --data-dir /kaggle/input/playground-series-s6e8 \
-  --anchor-oof artifacts/live_frontier_i5/oof.csv \
-  --anchor-test artifacts/live_frontier_quad/submission.csv \
+  --anchor-oof artifacts/frontier_quad_anchor/oof_anchor.csv \
+  --anchor-test artifacts/frontier_quad_anchor/submission_anchor.csv \
   --direction-dirs \
     artifacts/contrast_lgb_identity_screen \
     artifacts/contrast_xgb_identity_screen \
