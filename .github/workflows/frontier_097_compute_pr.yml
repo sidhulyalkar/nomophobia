@@ -2,7 +2,7 @@ name: frontier-097-compute-pr
 
 on:
   pull_request:
-    branches: [agent/frontier-097-campaign]
+    branches: [main]
 
 permissions:
   contents: read
@@ -46,18 +46,25 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
-        with: {python-version: '3.11'}
+        with:
+          python-version: '3.11'
       - run: pip install -e .
       - run: |
           git clone --depth 1 https://github.com/s23010843/Predicting-Smartphone-Addiction.git /tmp/datarepo
           mkdir -p /tmp/s6e8
           cp /tmp/datarepo/input/{train.csv,test.csv,sample_submission.csv} /tmp/s6e8/
       - uses: actions/download-artifact@v4
-        with: {name: frontier-i5, path: /tmp/i5}
+        with:
+          name: frontier-i5
+          path: /tmp/i5
       - uses: actions/download-artifact@v4
-        with: {name: frontier-i10, path: /tmp/i10}
+        with:
+          name: frontier-i10
+          path: /tmp/i10
       - uses: actions/download-artifact@v4
-        with: {name: frontier-s20, path: /tmp/s20}
+        with:
+          name: frontier-s20
+          path: /tmp/s20
       - name: Build aligned four-stream anchor
         run: |
           python scripts/build_live_frontier_anchor.py --data-dir /tmp/s6e8 \
@@ -88,7 +95,9 @@ jobs:
           mkdir -p /tmp/s6e8
           cp /tmp/datarepo/input/{train.csv,test.csv,sample_submission.csv} /tmp/s6e8/
       - uses: actions/download-artifact@v4
-        with: {name: frontier-quad-anchor, path: /tmp/anchor}
+        with:
+          name: frontier-quad-anchor
+          path: /tmp/anchor
       - name: Run matched fixed-schedule contrast
         shell: bash
         run: |
