@@ -27,100 +27,74 @@ jobs:
           base=https://raw.githubusercontent.com/s23010843/Predicting-Smartphone-Addiction/main/input
           curl -fL --retry 5 $base/train.csv -o data/train.csv
           curl -fL --retry 5 $base/test.csv -o data/test.csv
-      - name: Audit library and build robust rank blends
+      - name: Audit NPY library and build robust rank blends
         run: |
           cat > /tmp/library.py <<'PY'
-          import json
+          import json,re
           from pathlib import Path
-          import numpy as np, pandas as pd, kagglehub
+          import numpy as np,pandas as pd,kagglehub
           from scipy.stats import rankdata
           from sklearn.metrics import roc_auc_score
           from sklearn.model_selection import StratifiedKFold
           from sklearn.linear_model import LogisticRegression
-
           def rank01(x): return rankdata(np.asarray(x),method='average')/len(x)
           def fold_rank01(x,folds):
               out=np.empty(len(x),float)
               for f in np.unique(folds):
                   m=folds==f; out[m]=rankdata(np.asarray(x)[m],method='average')/m.sum()
               return out
-
-          tr=pd.read_csv('data/train.csv'); te=pd.read_csv('data/test.csv')
-          y=tr.addicted_label.to_numpy(int); tids=tr.id.to_numpy(); qids=te.id.to_numpy()
-          root=Path(kagglehub.dataset_download('szymonkapiski/s6e8-oof-library-47-models'))
-          files=[]
-          for p in root.rglob('*.csv'):
-              try:
-                  d=pd.read_csv(p); files.append((p,d))
-              except Exception: pass
-          train_candidates=[(p,d) for p,d in files if len(d)==len(tr)]
-          test_candidates=[(p,d) for p,d in files if len(d)==len(te)]
-          if not train_candidates or not test_candidates:
-              raise RuntimeError(f'Could not find aligned train/test CSVs under {root}; files={[str(p) for p,_ in files]}')
-          # prefer files literally named train/test
-          tp,libtr=sorted(train_candidates,key=lambda z:(z[0].name!='train.csv',len(z[0].parts)))[0]
-          qp,libte=sorted(test_candidates,key=lambda z:(z[0].name!='test.csv',len(z[0].parts)))[0]
-          if 'id' in libtr and not np.array_equal(libtr.id.to_numpy(),tids): raise RuntimeError('train IDs misaligned')
-          if 'id' in libte and not np.array_equal(libte.id.to_numpy(),qids): raise RuntimeError('test IDs misaligned')
-          common=[]
-          for c in libtr.columns:
-              if c not in libte.columns or c.lower() in {'id','fold','target','addicted_label','index'}: continue
-              if pd.api.types.is_numeric_dtype(libtr[c]) and pd.api.types.is_numeric_dtype(libte[c]):
-                  a=libtr[c].to_numpy(float); b=libte[c].to_numpy(float)
-                  if np.isfinite(a).all() and np.isfinite(b).all() and np.std(a)>1e-12 and np.std(b)>1e-12: common.append(c)
-          if not common: raise RuntimeError('No common prediction columns')
-          auc={c:float(roc_auc_score(y,libtr[c])) for c in common}
-          order=sorted(common,key=lambda c:auc[c],reverse=True)
-          # correlation pruning in global rank space
-          kept=[]; ranks={}
+          def norm(s):
+              s=re.sub(r'^(oof|test|pred|prediction)[_-]+','',s,flags=re.I)
+              s=re.sub(r'[_-]+(oof|test|pred|prediction)$','',s,flags=re.I)
+              return s
+          tr=pd.read_csv('data/train.csv');te=pd.read_csv('data/test.csv');y=tr.addicted_label.to_numpy(int);qids=te.id.to_numpy();ntr=len(tr);nte=len(te)
+          root=Path(kagglehub.dataset_download('szymonkapiski/s6e8-oof-library-47-models'));print('ROOT',root)
+          if (root/'manifest.csv').exists():
+              m=pd.read_csv(root/'manifest.csv');print('MANIFEST',list(m.columns));print(m.head(100).to_string(index=False))
+          paths=sorted([p for p in root.rglob('*') if p.is_file()]);print('FILES',[(str(p.relative_to(root)),p.stat().st_size) for p in paths])
+          train={};test={};folds_found=[]
+          for p in root.rglob('*.npy'):
+              try:a=np.load(p,allow_pickle=False)
+              except Exception:continue
+              if a.ndim!=1 or not np.issubdtype(a.dtype,np.number) or not np.isfinite(a).all():continue
+              key=norm(p.stem);low=p.stem.lower()
+              if len(a)==ntr:
+                  if 'fold' in low:folds_found.append((p.stem,a));continue
+                  train[key]=(a,p)
+              elif len(a)==nte:test[key]=(a,p)
+          common=sorted(set(train)&set(test))
+          if not common:
+              for kt,(a,pt) in list(train.items()):
+                  for kq,(b,pq) in list(test.items()):
+                      if kt in kq or kq in kt:
+                          k=kt if len(kt)>=len(kq) else kq;train[k]=(a,pt);test[k]=(b,pq)
+              common=sorted(set(train)&set(test))
+          if not common:raise RuntimeError(f'No pairs; train={list(train)[:100]} test={list(test)[:100]}')
+          auc={c:float(roc_auc_score(y,train[c][0])) for c in common};order=sorted(common,key=lambda c:auc[c],reverse=True)
+          kept=[];rr={}
           for c in order:
-              r=rank01(libtr[c]); ranks[c]=r
-              if any(float(np.corrcoef(r,ranks[k])[0,1])>=0.9995 for k in kept): continue
+              r=rank01(train[c][0]);rr[c]=r
+              if any(np.corrcoef(r,rr[k])[0,1]>=.9995 for k in kept):continue
               kept.append(c)
-              if len(kept)>=80: break
-          # meta folds are only for evaluating blend-weight stability; this is diagnostic if source folds differ/unknown
-          if 'fold' in libtr.columns:
-              folds=libtr['fold'].to_numpy()
-              fold_source='library'
+          if folds_found:folds=np.asarray(folds_found[0][1]);fold_source=folds_found[0][0]
           else:
-              folds=np.empty(len(y),np.int8)
-              sk=StratifiedKFold(5,shuffle=True,random_state=20260818)
-              for f,(_,vi) in enumerate(sk.split(np.zeros(len(y)),y)): folds[vi]=f
+              folds=np.empty(len(y),np.int8);sk=StratifiedKFold(5,shuffle=True,random_state=20260818)
+              for f,(_,vi) in enumerate(sk.split(np.zeros(len(y)),y)):folds[vi]=f
               fold_source='generated_meta_diagnostic'
-          O=np.column_stack([fold_rank01(libtr[c],folds) for c in kept])
-          T=np.column_stack([rank01(libte[c]) for c in kept])
-          # fixed equal top-k curve, useful as a no-weight-optimization baseline
+          O=np.column_stack([fold_rank01(train[c][0],folds) for c in kept]);T=np.column_stack([rank01(test[c][0]) for c in kept])
           eq=[]
-          for k in [2,3,5,8,10,15,20,min(30,len(kept))]:
-              if k>len(kept): continue
-              p=O[:,:k].mean(1); eq.append({'k':k,'auc':float(roc_auc_score(y,p))})
-          # cross-fitted rank-logit, regularized, coefficients frozen by held-meta-fold rotation
-          poof=np.zeros(len(y)); coef=[]; fold_auc=[]
+          for k in sorted(set(x for x in [2,3,5,8,10,15,20,30,len(kept)] if x<=len(kept))):eq.append({'k':k,'auc':float(roc_auc_score(y,O[:,:k].mean(1)))})
+          poof=np.zeros(len(y));co=[];fa=[]
           for h in np.unique(folds):
-              a=folds!=h; b=~a
-              lr=LogisticRegression(C=.03,solver='lbfgs',max_iter=1000)
-              lr.fit(O[a],y[a]); poof[b]=lr.decision_function(O[b]); coef.append(lr.coef_[0])
-              fold_auc.append(float(roc_auc_score(y[b],poof[b])))
-          mean_coef=np.mean(coef,0)
-          # preserve signed model-family correctors; scaling is irrelevant after final rank
-          test_logit=T@mean_coef
-          auc_logit=float(roc_auc_score(y,poof))
-          # Conservative positive-only version for a deployable rank portfolio
-          pos=np.maximum(mean_coef,0); pos=pos/pos.sum()
-          fixed_pos_oof=O@pos; fixed_pos_test=T@pos
-          auc_pos=float(roc_auc_score(y,fixed_pos_oof))
-          # diagnostic signed deployment score with fixed mean crossfit coefficients
-          fixed_signed_oof=O@mean_coef; auc_signed=float(roc_auc_score(y,fixed_signed_oof))
-          out=Path('artifacts/external_library'); out.mkdir(parents=True,exist_ok=True)
-          pd.DataFrame({'id':qids,'addicted_label':rank01(fixed_pos_test)}).to_csv(out/'submission_positive_ranklogit.csv',index=False)
-          pd.DataFrame({'id':qids,'addicted_label':rank01(test_logit)}).to_csv(out/'submission_signed_ranklogit_diagnostic.csv',index=False)
-          best_eq=max(eq,key=lambda x:x['auc']); k=best_eq['k']
+              a=folds!=h;b=~a;lr=LogisticRegression(C=.03,solver='lbfgs',max_iter=1000);lr.fit(O[a],y[a]);poof[b]=lr.decision_function(O[b]);co.append(lr.coef_[0]);fa.append(float(roc_auc_score(y[b],poof[b])))
+          mc=np.mean(co,0);pos=np.maximum(mc,0);pos/=pos.sum();out=Path('artifacts/external_library');out.mkdir(parents=True,exist_ok=True)
+          fixed=O@pos;fixed_test=T@pos;best=max(eq,key=lambda z:z['auc']);k=best['k']
+          pd.DataFrame({'id':qids,'addicted_label':rank01(fixed_test)}).to_csv(out/'submission_positive_ranklogit.csv',index=False)
+          pd.DataFrame({'id':qids,'addicted_label':rank01(T@mc)}).to_csv(out/'submission_signed_ranklogit_diagnostic.csv',index=False)
           pd.DataFrame({'id':qids,'addicted_label':rank01(T[:,:k].mean(1))}).to_csv(out/'submission_equal_topk.csv',index=False)
-          weights=pd.DataFrame({'model':kept,'solo_auc':[auc[c] for c in kept],'mean_logit_coef':mean_coef,'positive_weight':pos})
-          weights.to_csv(out/'weights.csv',index=False)
-          summary={'dataset_root':str(root),'train_file':str(tp),'test_file':str(qp),'n_input':len(common),'n_kept':len(kept),'fold_source':fold_source,'top_models':[{'model':c,'auc':auc[c]} for c in kept[:20]],'equal_topk_curve':eq,'ranklogit_crossfit_auc':auc_logit,'ranklogit_fold_auc':fold_auc,'positive_fixed_auc':auc_pos,'signed_fixed_auc_diagnostic':auc_signed,'best_equal':best_eq,'top_weights':weights.reindex(weights.positive_weight.abs().sort_values(ascending=False).index).head(25).to_dict('records')}
-          (out/'summary.json').write_text(json.dumps(summary,indent=2)+'\n')
-          print(json.dumps(summary,indent=2))
+          w=pd.DataFrame({'model':kept,'solo_auc':[auc[c] for c in kept],'mean_logit_coef':mc,'positive_weight':pos});w.to_csv(out/'weights.csv',index=False)
+          s={'n_input':len(common),'n_kept':len(kept),'fold_source':fold_source,'top_models':[{'model':c,'auc':auc[c]} for c in kept[:30]],'equal_topk_curve':eq,'ranklogit_crossfit_auc':float(roc_auc_score(y,poof)),'ranklogit_fold_auc':fa,'positive_fixed_auc':float(roc_auc_score(y,fixed)),'signed_fixed_auc_diagnostic':float(roc_auc_score(y,O@mc)),'best_equal':best,'top_weights':w.reindex(w.positive_weight.abs().sort_values(ascending=False).index).head(30).to_dict('records')}
+          (out/'summary.json').write_text(json.dumps(s,indent=2)+'\n');print('SUMMARY',json.dumps(s,indent=2))
           PY
           python /tmp/library.py
       - uses: actions/upload-artifact@v4
