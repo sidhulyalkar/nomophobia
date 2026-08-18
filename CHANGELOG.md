@@ -1,5 +1,15 @@
 # Changelog
 
+## 0.3.2 — Live target-encoding frontier
+
+- Added a full-data leakage-safe exact-value target-encoding frontier with LightGBM and XGBoost, including rotating held-fold rank-blend selection.
+- Added replicated 120k screens for target-encoding uncertainty metadata, inner-fold count, small-sample capacity, and smoothing diversity.
+- Promoted smoothing-20 only as a diversity stream after its 50/50 blend with smoothing-10 improved all three replicated screens.
+- Added full-data smoothing-20 LightGBM and an aligned four-stream live blend across inner-5 LightGBM, XGBoost, inner-10 LightGBM, and smoothing-20 LightGBM.
+- Added deterministic submission materialization with row/ID/finite-score validation and SHA-256 metadata.
+- Added a manual GitHub Actions workflow for explicitly running the live frontier lanes without auto-triggering expensive research jobs.
+- Added `docs/LIVE_FRONTIER_2026-08-17.md` with the exact evidence, fold metrics, blend weights, commands, and submission hashes.
+
 ## 0.3.1 — Kaggle CPU notebook operations
 
 - Added a two-notebook Kaggle CPU workflow under `kaggle/notebooks/` to minimize manual orchestration.

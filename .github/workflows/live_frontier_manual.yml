@@ -1,0 +1,98 @@
+name: live-frontier-manual
+
+on:
+  workflow_dispatch:
+    inputs:
+      lane:
+        description: Research lane to run
+        required: true
+        default: frontier_i5
+        type: choice
+        options:
+          - frontier_i5
+          - frontier_i10
+          - smoothing20_full
+          - innerfold_screen
+          - capacity_screen
+          - smoothing_screen
+          - uncertainty_screen
+
+permissions:
+  contents: read
+
+jobs:
+  research:
+    runs-on: ubuntu-latest
+    timeout-minutes: 120
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+          cache: pip
+      - name: Install modeling stack
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+      - name: Acquire public competition mirror
+        run: |
+          # Convenience only. Kaggle competition files remain the source of truth.
+          git clone --depth 1 https://github.com/s23010843/Predicting-Smartphone-Addiction.git /tmp/s6e8-data
+          mkdir -p /tmp/s6e8
+          cp /tmp/s6e8-data/input/train.csv /tmp/s6e8/train.csv
+          cp /tmp/s6e8-data/input/test.csv /tmp/s6e8/test.csv
+          cp /tmp/s6e8-data/input/sample_submission.csv /tmp/s6e8/sample_submission.csv
+      - name: Run selected lane
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p live_results
+          case "${{ inputs.lane }}" in
+            frontier_i5)
+              python experiments/live_frontier_candidate.py \
+                --data-dir /tmp/s6e8 --out-dir live_results/frontier_i5 \
+                --folds 5 --inner-folds 5 --smoothing 10 \
+                --lgb-estimators 4500 --xgb-estimators 3000
+              ;;
+            frontier_i10)
+              python experiments/live_frontier_candidate.py \
+                --data-dir /tmp/s6e8 --out-dir live_results/frontier_i10 \
+                --folds 5 --inner-folds 10 --smoothing 10 \
+                --lgb-estimators 4500 --xgb-estimators 3000
+              ;;
+            smoothing20_full)
+              python experiments/live_smoothing20_candidate.py \
+                --data-dir /tmp/s6e8 --out-dir live_results/smoothing20 \
+                --estimators 4500 --folds 5 --inner-folds 5
+              ;;
+            innerfold_screen)
+              python experiments/te_innerfold_screen.py \
+                --data-dir /tmp/s6e8 --out live_results/innerfold_screen.json \
+                --rows 120000 --estimators 1200
+              ;;
+            capacity_screen)
+              python experiments/te_capacity_screen.py \
+                --data-dir /tmp/s6e8 --out live_results/capacity_screen.json \
+                --rows 120000 --max-estimators 2000
+              ;;
+            smoothing_screen)
+              python experiments/te_smoothing_diversity.py \
+                --data-dir /tmp/s6e8 --out live_results/smoothing_screen.json \
+                --rows 120000 --estimators 1200
+              ;;
+            uncertainty_screen)
+              python experiments/te_uncertainty_screen.py \
+                --data-dir /tmp/s6e8 --out live_results/uncertainty_screen.json \
+                --rows 120000 --estimators 1200 --inner-folds 5 --smoothing 10
+              ;;
+            *)
+              echo "unknown lane: ${{ inputs.lane }}" >&2
+              exit 2
+              ;;
+          esac
+      - uses: actions/upload-artifact@v4
+        with:
+          name: live-frontier-${{ inputs.lane }}
+          path: live_results/
+          retention-days: 7
+          compression-level: 6
