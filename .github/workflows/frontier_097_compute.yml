@@ -1,0 +1,202 @@
+name: frontier-097-compute
+
+on:
+  push:
+    branches: [agent/frontier-097-compute]
+    paths:
+      - '.github/workflows/frontier_097_compute.yml'
+
+permissions:
+  contents: read
+
+jobs:
+  frontier_i5:
+    runs-on: ubuntu-latest
+    timeout-minutes: 330
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+          cache: pip
+      - run: pip install -e '.[full]'
+      - name: Acquire public competition mirror
+        run: |
+          git clone --depth 1 https://github.com/s23010843/Predicting-Smartphone-Addiction.git /tmp/datarepo
+          mkdir -p /tmp/s6e8
+          cp /tmp/datarepo/input/{train.csv,test.csv,sample_submission.csv} /tmp/s6e8/
+      - name: Run i5 frontier
+        run: python experiments/live_frontier_candidate.py --data-dir /tmp/s6e8 --out-dir results --folds 5 --inner-folds 5 --smoothing 10 --lgb-estimators 4500 --xgb-estimators 3000
+      - uses: actions/upload-artifact@v4
+        with:
+          name: frontier-i5
+          path: results
+          retention-days: 7
+
+  frontier_i10:
+    runs-on: ubuntu-latest
+    timeout-minutes: 330
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+          cache: pip
+      - run: pip install -e '.[full]'
+      - run: |
+          git clone --depth 1 https://github.com/s23010843/Predicting-Smartphone-Addiction.git /tmp/datarepo
+          mkdir -p /tmp/s6e8
+          cp /tmp/datarepo/input/{train.csv,test.csv,sample_submission.csv} /tmp/s6e8/
+      - name: Run i10 frontier
+        run: python experiments/live_frontier_candidate.py --data-dir /tmp/s6e8 --out-dir results --folds 5 --inner-folds 10 --smoothing 10 --lgb-estimators 4500 --xgb-estimators 3000
+      - uses: actions/upload-artifact@v4
+        with:
+          name: frontier-i10
+          path: results
+          retention-days: 7
+
+  smoothing20:
+    runs-on: ubuntu-latest
+    timeout-minutes: 330
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+          cache: pip
+      - run: pip install -e '.[full]'
+      - run: |
+          git clone --depth 1 https://github.com/s23010843/Predicting-Smartphone-Addiction.git /tmp/datarepo
+          mkdir -p /tmp/s6e8
+          cp /tmp/datarepo/input/{train.csv,test.csv,sample_submission.csv} /tmp/s6e8/
+      - name: Run smoothing-20 frontier
+        run: python experiments/live_smoothing20_candidate.py --data-dir /tmp/s6e8 --out-dir results --estimators 4500 --folds 5 --inner-folds 5
+      - uses: actions/upload-artifact@v4
+        with:
+          name: frontier-s20
+          path: results
+          retention-days: 7
+
+  anchor:
+    needs: [frontier_i5, frontier_i10, smoothing20]
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - run: pip install -e .
+      - run: |
+          git clone --depth 1 https://github.com/s23010843/Predicting-Smartphone-Addiction.git /tmp/datarepo
+          mkdir -p /tmp/s6e8
+          cp /tmp/datarepo/input/{train.csv,test.csv,sample_submission.csv} /tmp/s6e8/
+      - uses: actions/download-artifact@v4
+        with:
+          name: frontier-i5
+          path: /tmp/i5
+      - uses: actions/download-artifact@v4
+        with:
+          name: frontier-i10
+          path: /tmp/i10
+      - uses: actions/download-artifact@v4
+        with:
+          name: frontier-s20
+          path: /tmp/s20
+      - name: Build aligned quad anchor
+        run: |
+          python scripts/build_live_frontier_anchor.py \
+            --data-dir /tmp/s6e8 \
+            --oof-s10-i5 /tmp/i5/oof.csv \
+            --oof-s10-i10 /tmp/i10/oof.csv \
+            --oof-s20-i5 /tmp/s20/oof_s20.csv \
+            --test-lgb-s10-i5 /tmp/i5/submission_lgb.csv \
+            --test-xgb-s10-i5 /tmp/i5/submission_xgb.csv \
+            --test-lgb-s10-i10 /tmp/i10/submission_lgb.csv \
+            --test-lgb-s20-i5 /tmp/s20/submission_s20.csv \
+            --out-dir results
+      - uses: actions/upload-artifact@v4
+        with:
+          name: frontier-quad-anchor
+          path: results
+          retention-days: 7
+
+  contrast_lgb:
+    needs: anchor
+    runs-on: ubuntu-latest
+    timeout-minutes: 330
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+          cache: pip
+      - run: pip install -e '.[full]'
+      - run: |
+          git clone --depth 1 https://github.com/s23010843/Predicting-Smartphone-Addiction.git /tmp/datarepo
+          mkdir -p /tmp/s6e8
+          cp /tmp/datarepo/input/{train.csv,test.csv,sample_submission.csv} /tmp/s6e8/
+      - uses: actions/download-artifact@v4
+        with:
+          name: frontier-quad-anchor
+          path: /tmp/anchor
+      - name: Run fixed-900 LGB identity+screen contrast
+        run: python experiments/frontier_contrast_campaign.py --data-dir /tmp/s6e8 --anchor-oof /tmp/anchor/oof_anchor.csv --anchor-test /tmp/anchor/submission_anchor.csv --family lgb --treatment identity_screen --rounds 900 --out-dir results
+      - uses: actions/upload-artifact@v4
+        with:
+          name: contrast-lgb
+          path: results
+          retention-days: 7
+
+  contrast_xgb:
+    needs: anchor
+    runs-on: ubuntu-latest
+    timeout-minutes: 330
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+          cache: pip
+      - run: pip install -e '.[full]'
+      - run: |
+          git clone --depth 1 https://github.com/s23010843/Predicting-Smartphone-Addiction.git /tmp/datarepo
+          mkdir -p /tmp/s6e8
+          cp /tmp/datarepo/input/{train.csv,test.csv,sample_submission.csv} /tmp/s6e8/
+      - uses: actions/download-artifact@v4
+        with:
+          name: frontier-quad-anchor
+          path: /tmp/anchor
+      - name: Run fixed-1500 XGB identity+screen contrast
+        run: python experiments/frontier_contrast_campaign.py --data-dir /tmp/s6e8 --anchor-oof /tmp/anchor/oof_anchor.csv --anchor-test /tmp/anchor/submission_anchor.csv --family xgb --treatment identity_screen --rounds 1500 --out-dir results
+      - uses: actions/upload-artifact@v4
+        with:
+          name: contrast-xgb
+          path: results
+          retention-days: 7
+
+  contrast_cat:
+    needs: anchor
+    runs-on: ubuntu-latest
+    timeout-minutes: 330
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+          cache: pip
+      - run: pip install -e '.[full]'
+      - run: |
+          git clone --depth 1 https://github.com/s23010843/Predicting-Smartphone-Addiction.git /tmp/datarepo
+          mkdir -p /tmp/s6e8
+          cp /tmp/datarepo/input/{train.csv,test.csv,sample_submission.csv} /tmp/s6e8/
+      - uses: actions/download-artifact@v4
+        with:
+          name: frontier-quad-anchor
+          path: /tmp/anchor
+      - name: Run fixed-4000 CatBoost identity contrast
+        run: python experiments/frontier_contrast_campaign.py --data-dir /tmp/s6e8 --anchor-oof /tmp/anchor/oof_anchor.csv --anchor-test /tmp/anchor/submission_anchor.csv --family cat --treatment identity --rounds 4000 --out-dir results
+      - uses: actions/upload-artifact@v4
+        with:
+          name: contrast-cat
+          path: results
+          retention-days: 7
