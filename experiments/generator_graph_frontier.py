@@ -2,7 +2,6 @@
 from __future__ import annotations
 
 import argparse
-import hashlib
 import json
 import time
 from pathlib import Path
@@ -32,14 +31,6 @@ DEFAULT_WEIGHTS = [
     0.160,
     0.200,
 ]
-
-
-def _sha256(path: Path) -> str:
-    digest = hashlib.sha256()
-    with path.open("rb") as handle:
-        for chunk in iter(lambda: handle.read(1024 * 1024), b""):
-            digest.update(chunk)
-    return digest.hexdigest()
 
 
 def _parse_weights(text: str | None) -> list[float]:
@@ -202,7 +193,12 @@ def main() -> None:
     ).to_csv(out / "oof_generator_graph.csv", index=False)
 
     submission_path = out / "submission_generator_graph.csv"
-    write_submission(test[ID_COL], candidate_test, submission_path)
+    submission_stats = write_submission(
+        submission_path,
+        sample,
+        test,
+        candidate_test,
+    )
 
     result = {
         "version": "generator-graph-v1",
@@ -229,8 +225,8 @@ def main() -> None:
         "anchor_auc": float(roc_auc_score(y, anchor_oof)),
         "elapsed_seconds": round(time.time() - started, 2),
         "submission": {
+            **submission_stats,
             "path": str(submission_path),
-            "sha256": _sha256(submission_path),
             "accepted": bool(decision["accepted"]),
             "deploy_weight": deploy_weight,
         },
