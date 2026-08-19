@@ -1,0 +1,14 @@
+{
+  "selected_submission": "submission_nomophobia_v19_lgb015.csv",
+  "sha256": "e2d0866a57590dce5e20ce4f98edb9cf1822e79a6af7e17cc0be22e887f905a2",
+  "rows": 296302,
+  "unique_ids": 296302,
+  "unique_predictions": 295801,
+  "public_anchor": "Naji v19 audited blend",
+  "public_anchor_oof_auc": 0.9700992093622354,
+  "nomophobia_direction": "fixed-900 LightGBM identity+screen treatment-minus-control rank direction",
+  "residual_weight": 0.015,
+  "candidate_oof_auc": 0.9701014001897124,
+  "candidate_oof_gain": 2.190827477e-06,
+  "leaderboard_score": null
+}
