@@ -24,7 +24,7 @@ jobs:
         with:
           python-version: "3.11"
           cache: pip
-      - run: pip install -e .
+      - run: pip install -e . pytest
       - name: Focused offset-RankNet test
         run: pytest -q tests/test_offset_ranknet.py
       - name: Acquire public competition mirror
