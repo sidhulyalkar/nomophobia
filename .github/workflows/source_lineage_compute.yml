@@ -28,7 +28,7 @@ jobs:
         with:
           python-version: "3.11"
           cache: pip
-      - run: pip install -e '.[full]'
+      - run: pip install -e .
       - name: Acquire public competition mirror
         run: |
           git clone --depth 1 https://github.com/s23010843/Predicting-Smartphone-Addiction.git /tmp/datarepo
