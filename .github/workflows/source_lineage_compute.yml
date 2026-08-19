@@ -1,0 +1,76 @@
+name: source-lineage-frontier
+
+on:
+  workflow_dispatch:
+  pull_request:
+    branches: [main]
+    paths:
+      - "src/s6e8/source_lineage.py"
+      - "experiments/source_lineage_contrast.py"
+      - "tests/test_source_lineage.py"
+      - ".github/workflows/source_lineage_compute.yml"
+
+permissions:
+  contents: read
+  actions: read
+
+jobs:
+  source-lineage:
+    strategy:
+      fail-fast: false
+      matrix:
+        mode: [membership, lineage]
+    runs-on: ubuntu-latest
+    timeout-minutes: 330
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: pip
+      - run: pip install -e '.[full]'
+      - name: Acquire public competition mirror
+        run: |
+          git clone --depth 1 https://github.com/s23010843/Predicting-Smartphone-Addiction.git /tmp/datarepo
+          mkdir -p /tmp/s6e8
+          cp /tmp/datarepo/input/{train.csv,test.csv,sample_submission.csv} /tmp/s6e8/
+      - name: Acquire original source dataset
+        run: |
+          git clone --depth 1 https://github.com/Chireal-218/Smartphone-Usage-and-Addiction-Analysis.git /tmp/source-repo
+          cp /tmp/source-repo/Smartphone_Usage_And_Addiction_Analysis_7500_Rows.csv /tmp/source.csv
+          python -c "import pandas as pd; d=pd.read_csv('/tmp/source.csv'); assert len(d)==7500; assert {'addiction_level','addicted_label'}.issubset(d.columns)"
+      - name: Reuse validated quad anchor
+        uses: actions/download-artifact@v4
+        with:
+          name: frontier-quad-anchor
+          path: /tmp/anchor
+          github-token: ${{ github.token }}
+          repository: sidhulyalkar/nomophobia
+          run-id: 32194910518
+      - name: Reuse matched raw LightGBM control
+        uses: actions/download-artifact@v4
+        with:
+          name: contrast-lgb
+          path: /tmp/control
+          github-token: ${{ github.token }}
+          repository: sidhulyalkar/nomophobia
+          run-id: 32194910518
+      - name: Run matched source-lineage contrast
+        run: |
+          python experiments/source_lineage_contrast.py \
+            --data-dir /tmp/s6e8 \
+            --source-csv /tmp/source.csv \
+            --anchor-oof /tmp/anchor/oof_anchor.csv \
+            --anchor-test /tmp/anchor/submission_anchor.csv \
+            --mode ${{ matrix.mode }} \
+            --rounds 900 \
+            --max-order 3 \
+            --max-groups 96 \
+            --screen-rows 60000 \
+            --reuse-control-dir /tmp/control \
+            --out-dir results
+      - uses: actions/upload-artifact@v4
+        with:
+          name: source-lineage-${{ matrix.mode }}
+          path: results
+          retention-days: 7
