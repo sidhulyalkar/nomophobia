@@ -1,0 +1,21 @@
+name: frontier-097-research-pr-disabled
+
+on:
+  pull_request:
+    branches:
+      - main
+    paths:
+      - .github/workflows/frontier_research_pr.yml
+
+permissions:
+  contents: read
+
+concurrency:
+  group: frontier-097-research-pr-${{ github.event.pull_request.number }}
+  cancel-in-progress: true
+
+jobs:
+  disabled:
+    runs-on: ubuntu-latest
+    steps:
+      - run: echo "Research execution moved into the branch-gated tests workflow."
