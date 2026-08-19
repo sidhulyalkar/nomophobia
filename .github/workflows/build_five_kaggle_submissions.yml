@@ -1,0 +1,75 @@
+name: Build five Kaggle submissions
+
+on:
+  push:
+    branches:
+      - agent/five-kaggle-submissions-20260819
+    paths:
+      - .github/workflows/build_five_kaggle_submissions.yml
+  workflow_dispatch:
+
+permissions:
+  contents: write
+  actions: read
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out campaign branch
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 1
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Install builder dependencies
+        run: python -m pip install --disable-pip-version-check numpy pandas
+
+      - name: Recover selected v19+LGB anchor
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+        run: |
+          curl --fail --location --silent --show-error \
+            -H "Authorization: Bearer ${GITHUB_TOKEN}" \
+            -H "Accept: application/vnd.github.raw+json" \
+            "https://api.github.com/repos/${GITHUB_REPOSITORY}/contents/kaggle/submission_nomophobia_v19_lgb015.csv?ref=agent/frontier-097-campaign" \
+            -o /tmp/v19_lgb015.csv
+          test -s /tmp/v19_lgb015.csv
+
+      - name: Recover measured LGB frontier artifact
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+        run: |
+          mkdir -p /tmp/lgb_frontier
+          curl --fail --location --silent --show-error \
+            -H "Authorization: Bearer ${GITHUB_TOKEN}" \
+            -H "Accept: application/vnd.github+json" \
+            "https://api.github.com/repos/${GITHUB_REPOSITORY}/actions/artifacts/9346320480/zip" \
+            -o /tmp/lgb_frontier.zip
+          unzip -q /tmp/lgb_frontier.zip -d /tmp/lgb_frontier
+          find /tmp/lgb_frontier -maxdepth 3 -type f -print
+          test -n "$(find /tmp/lgb_frontier -name submission_candidate.csv -print -quit)"
+
+      - name: Build and validate the five-file portfolio
+        run: |
+          CONTRAST="$(find /tmp/lgb_frontier -name submission_candidate.csv -print -quit)"
+          python scripts/build_leaderboard_five.py \
+            --anchor /tmp/v19_lgb015.csv \
+            --contrast "$CONTRAST" \
+            --out-dir kaggle/submissions_2026-08-19
+
+      - name: Commit generated Kaggle CSVs and manifest
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add -f kaggle/submissions_2026-08-19/*.csv kaggle/submissions_2026-08-19/manifest.json
+          if git diff --cached --quiet; then
+            echo "Submission portfolio already current."
+          else
+            git commit -m "Add five ready-to-submit Kaggle CSVs"
+            git push origin HEAD:${GITHUB_REF_NAME}
+          fi
