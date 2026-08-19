@@ -1,0 +1,112 @@
+{
+  "purpose": "five Kaggle submissions ordered for immediate leaderboard evaluation",
+  "target": "addicted_label",
+  "rows": 296302,
+  "anchor_contrast_rank_correlation": 0.9941484746507209,
+  "source_anchor": "agent/frontier-097-campaign:kaggle/submission_nomophobia_v19_lgb015.csv",
+  "source_contrast_artifact_id": 9346320480,
+  "submissions": [
+    {
+      "order": 1,
+      "file": "01_v19_lgb015_anchor.csv",
+      "anchor_weight": 1.0,
+      "contrast_weight": 0.0,
+      "rationale": "current selected public-anchor + LGB residual",
+      "sha256": "b7d1d90fa09e6b8d7d2cc62dc0afa70e2a05e51818d315a08c8a5104a4de4fb0",
+      "rows": 296302,
+      "unique_predictions": 295801,
+      "prediction_min": 3.3749350325006245e-06,
+      "prediction_max": 1.0,
+      "prediction_mean": 0.5000016874675163
+    },
+    {
+      "order": 2,
+      "file": "02_anchor95_lgb05.csv",
+      "anchor_weight": 0.95,
+      "contrast_weight": 0.05,
+      "rationale": "conservative 5% identity-screen probe",
+      "sha256": "05674d20f7d3b3c1393b95bd5b007fe7103eea5f32e74a6516135b19ce2fd337",
+      "rows": 296302,
+      "unique_predictions": 292194,
+      "prediction_min": 3.3749350325006245e-06,
+      "prediction_max": 1.0,
+      "prediction_mean": 0.5000016874675163
+    },
+    {
+      "order": 3,
+      "file": "03_anchor80_lgb20.csv",
+      "anchor_weight": 0.8,
+      "contrast_weight": 0.2,
+      "rationale": "moderate 20% identity-screen probe",
+      "sha256": "e61199da753e219dbe87a48fd5d57e9d6eac0bdb513378af1851216ecfa22ff8",
+      "rows": 296302,
+      "unique_predictions": 278972,
+      "prediction_min": 3.3749350325006245e-06,
+      "prediction_max": 1.0,
+      "prediction_mean": 0.5000016874675163
+    },
+    {
+      "order": 4,
+      "file": "04_anchor50_lgb50.csv",
+      "anchor_weight": 0.5,
+      "contrast_weight": 0.5,
+      "rationale": "balanced diversity probe",
+      "sha256": "4d68f74db30fc597f7ffa4f7c602a1fc1dfe66b1166b9ecf0228b776e96f270b",
+      "rows": 296302,
+      "unique_predictions": 243920,
+      "prediction_min": 3.3749350325006245e-06,
+      "prediction_max": 1.0,
+      "prediction_mean": 0.5000016874675163
+    },
+    {
+      "order": 5,
+      "file": "05_lgb_identity_screen.csv",
+      "anchor_weight": 0.0,
+      "contrast_weight": 1.0,
+      "rationale": "independent LGB identity-screen endpoint",
+      "sha256": "0189b41c91da8efa7cef058b7cdacb51a1435aeb12284799b34427df3c1b1db5",
+      "rows": 296302,
+      "unique_predictions": 296063,
+      "prediction_min": 3.3749350325006245e-06,
+      "prediction_max": 1.0,
+      "prediction_mean": 0.5000016874675163
+    }
+  ],
+  "pairwise_rank_correlation": [
+    [
+      0.9999999999999998,
+      0.9999855887162472,
+      0.9997673734066352,
+      0.9985298787393663,
+      0.9941484746507209
+    ],
+    [
+      0.9999855887162472,
+      1.0,
+      0.999868673592669,
+      0.998805806436365,
+      0.9947097373834639
+    ],
+    [
+      0.9997673734066351,
+      0.999868673592669,
+      0.9999999999999998,
+      0.9994655902673081,
+      0.9962350491523405
+    ],
+    [
+      0.9985298787393663,
+      0.9988058064363649,
+      0.9994655902673081,
+      1.0,
+      0.9985306296619029
+    ],
+    [
+      0.9941484746507209,
+      0.9947097373834638,
+      0.9962350491523403,
+      0.9985306296619029,
+      0.9999999999999998
+    ]
+  ]
+}
