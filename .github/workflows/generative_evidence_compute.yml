@@ -1,0 +1,54 @@
+name: generative-evidence-frontier
+
+on:
+  workflow_dispatch:
+  pull_request:
+    branches: [main]
+    paths:
+      - "src/s6e8/generative_evidence.py"
+      - "experiments/generative_evidence_campaign.py"
+      - "tests/test_generative_evidence.py"
+      - ".github/workflows/generative_evidence_compute.yml"
+
+permissions:
+  contents: read
+  actions: read
+
+jobs:
+  tan-evidence:
+    runs-on: ubuntu-latest
+    timeout-minutes: 90
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: pip
+      - run: pip install -e .
+      - name: Acquire public competition mirror
+        run: |
+          git clone --depth 1 https://github.com/s23010843/Predicting-Smartphone-Addiction.git /tmp/datarepo
+          mkdir -p /tmp/s6e8
+          cp /tmp/datarepo/input/{train.csv,test.csv,sample_submission.csv} /tmp/s6e8/
+      - name: Reuse validated quad anchor
+        uses: actions/download-artifact@v4
+        with:
+          name: frontier-quad-anchor
+          path: /tmp/anchor
+          github-token: ${{ github.token }}
+          repository: sidhulyalkar/nomophobia
+          run-id: 32194910518
+      - name: Run TAN generative evidence campaign
+        run: |
+          python experiments/generative_evidence_campaign.py \
+            --data-dir /tmp/s6e8 \
+            --anchor-oof /tmp/anchor/oof_anchor.csv \
+            --anchor-test /tmp/anchor/submission_anchor.csv \
+            --n-bins 24 \
+            --alpha 1.0 \
+            --out-dir results
+      - uses: actions/upload-artifact@v4
+        with:
+          name: generative-evidence-tan
+          path: results
+          retention-days: 7
