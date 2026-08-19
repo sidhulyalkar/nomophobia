@@ -1,0 +1,14 @@
+{
+  "candidate": "submission_06_v19_xgb_residual010.csv",
+  "recipe": "rank(rank(v19_lgb015_anchor) + weight * xgb_identity_screen_treatment_minus_control_rank_direction)",
+  "weight": 0.1,
+  "rows": 296302,
+  "unique_ids": 296302,
+  "unique_predictions": 288424,
+  "anchor_candidate_spearman": 0.9999400269750576,
+  "direction_std": 0.03167176962245767,
+  "direction_min": -0.2853507569979278,
+  "direction_max": 0.21643120869923255,
+  "sha256": "51d5f25a20d0f1ae17df277b169f910f2f5de457f16805a09871a6fbb2784419",
+  "evidence_note": "Diagnostic transfer probe. The XGB direction passed matched fixed-schedule OOF residual tests and received 0.10 deployment weight in the nested quad-anchor winner, but this exact coefficient has not been selected against v19 OOF."
+}
