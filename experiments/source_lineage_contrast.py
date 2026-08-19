@@ -139,7 +139,9 @@ def main() -> None:
     weights = _parse_weights(args.weights)
 
     train, test, sample = _read_competition(data_dir)
-    source = pd.read_csv(source_path)
+    # The source uses the literal string "None" as an ordinal severity class.
+    # Pandas' default NA vocabulary can consume that token, so preserve strings.
+    source = pd.read_csv(source_path, keep_default_na=False)
     y = train[TARGET].to_numpy(np.int8)
     ids = train[ID_COL].to_numpy()
     anchor_oof, anchor_test, folds = _load_anchor(
