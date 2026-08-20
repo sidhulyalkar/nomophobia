@@ -109,6 +109,7 @@ def main() -> None:
         "lgb_identity_screen": 0.0,
         "xgb_identity_screen": 0.0,
     }
+    deploy_oof = decision["deploy_oof"] if accepted else anchor_oof
     prediction = compose_rank_score(
         anchor_test,
         {
@@ -118,8 +119,18 @@ def main() -> None:
         deploy_weights,
         rerank=True,
     )
-    if not np.isfinite(prediction).all():
-        raise ValueError("submission contains non-finite predictions")
+    if not np.isfinite(prediction).all() or not np.isfinite(deploy_oof).all():
+        raise ValueError("frontier winner contains non-finite predictions")
+
+    oof_path = out / "oof_frontier_winner.csv"
+    pd.DataFrame(
+        {
+            ID_COL: ids,
+            TARGET: y,
+            "fold": folds,
+            "frontier_winner": deploy_oof,
+        }
+    ).to_csv(oof_path, index=False)
 
     submission = pd.DataFrame({ID_COL: test[ID_COL].to_numpy(), TARGET: prediction})
     submission_path = out / "submission_frontier_winner.csv"
@@ -131,7 +142,7 @@ def main() -> None:
         if key not in {"honest_oof", "deploy_oof"}
     }
     report = {
-        "version": "frontier-residual-winner-v2",
+        "version": "frontier-residual-winner-v3",
         "accepted": accepted,
         "selection": serializable_decision,
         "honest_delong_p": float(delong_test(y, anchor_oof, decision["honest_oof"])),
@@ -139,6 +150,11 @@ def main() -> None:
         "direction_corr_oof": float(np.corrcoef(lgb_oof, xgb_oof)[0, 1]),
         "direction_corr_test": float(np.corrcoef(lgb_test, xgb_test)[0, 1]),
         "stress": stress,
+        "oof": {
+            "file": oof_path.name,
+            "sha256": _sha256(oof_path),
+            "auc": float(__import__("sklearn.metrics").metrics.roc_auc_score(y, deploy_oof)),
+        },
         "submission": {
             "file": submission_path.name,
             "sha256": _sha256(submission_path),

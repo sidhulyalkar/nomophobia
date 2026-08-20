@@ -1,0 +1,152 @@
+name: generator-graph-compute-pr
+
+on:
+  pull_request:
+    branches: [main]
+
+permissions:
+  contents: read
+
+jobs:
+  frontier:
+    if: github.head_ref == 'agent/generator-graph-winner'
+    strategy:
+      fail-fast: false
+      matrix:
+        lane: [i5, i10, s20]
+    runs-on: ubuntu-latest
+    timeout-minutes: 330
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with: {python-version: '3.11', cache: pip}
+      - run: pip install -e '.[full]'
+      - name: Acquire competition mirror
+        run: |
+          git clone --depth 1 https://github.com/s23010843/Predicting-Smartphone-Addiction.git /tmp/datarepo
+          mkdir -p /tmp/s6e8
+          cp /tmp/datarepo/input/{train.csv,test.csv,sample_submission.csv} /tmp/s6e8/
+      - name: Reconstruct frontier lane
+        shell: bash
+        run: |
+          set -euo pipefail
+          case '${{ matrix.lane }}' in
+            i5) python experiments/live_frontier_candidate.py --data-dir /tmp/s6e8 --out-dir results --folds 5 --inner-folds 5 --smoothing 10 --lgb-estimators 4500 --xgb-estimators 3000 ;;
+            i10) python experiments/live_frontier_candidate.py --data-dir /tmp/s6e8 --out-dir results --folds 5 --inner-folds 10 --smoothing 10 --lgb-estimators 4500 --xgb-estimators 3000 ;;
+            s20) python experiments/live_smoothing20_candidate.py --data-dir /tmp/s6e8 --out-dir results --estimators 4500 --folds 5 --inner-folds 5 ;;
+          esac
+      - uses: actions/upload-artifact@v4
+        with: {name: 'graph-frontier-${{ matrix.lane }}', path: results, retention-days: 7}
+
+  anchor:
+    if: github.head_ref == 'agent/generator-graph-winner'
+    needs: frontier
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with: {python-version: '3.11'}
+      - run: pip install -e .
+      - run: |
+          git clone --depth 1 https://github.com/s23010843/Predicting-Smartphone-Addiction.git /tmp/datarepo
+          mkdir -p /tmp/s6e8
+          cp /tmp/datarepo/input/{train.csv,test.csv,sample_submission.csv} /tmp/s6e8/
+      - uses: actions/download-artifact@v4
+        with: {name: graph-frontier-i5, path: /tmp/i5}
+      - uses: actions/download-artifact@v4
+        with: {name: graph-frontier-i10, path: /tmp/i10}
+      - uses: actions/download-artifact@v4
+        with: {name: graph-frontier-s20, path: /tmp/s20}
+      - name: Build aligned quad anchor
+        run: |
+          python scripts/build_live_frontier_anchor.py --data-dir /tmp/s6e8 \
+            --oof-s10-i5 /tmp/i5/oof.csv --oof-s10-i10 /tmp/i10/oof.csv --oof-s20-i5 /tmp/s20/oof_s20.csv \
+            --test-lgb-s10-i5 /tmp/i5/submission_lgb.csv --test-xgb-s10-i5 /tmp/i5/submission_xgb.csv \
+            --test-lgb-s10-i10 /tmp/i10/submission_lgb.csv --test-lgb-s20-i5 /tmp/s20/submission_s20.csv --out-dir results
+      - uses: actions/upload-artifact@v4
+        with: {name: graph-quad-anchor, path: results, retention-days: 7}
+
+  contrast:
+    if: github.head_ref == 'agent/generator-graph-winner'
+    needs: anchor
+    strategy:
+      fail-fast: false
+      matrix:
+        family: [lgb, xgb]
+    runs-on: ubuntu-latest
+    timeout-minutes: 330
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with: {python-version: '3.11', cache: pip}
+      - run: pip install -e '.[full]'
+      - run: |
+          git clone --depth 1 https://github.com/s23010843/Predicting-Smartphone-Addiction.git /tmp/datarepo
+          mkdir -p /tmp/s6e8
+          cp /tmp/datarepo/input/{train.csv,test.csv,sample_submission.csv} /tmp/s6e8/
+      - uses: actions/download-artifact@v4
+        with: {name: graph-quad-anchor, path: /tmp/anchor}
+      - name: Reconstruct accepted residual direction
+        shell: bash
+        run: |
+          set -euo pipefail
+          case '${{ matrix.family }}' in
+            lgb) python experiments/frontier_contrast_campaign.py --data-dir /tmp/s6e8 --anchor-oof /tmp/anchor/oof_anchor.csv --anchor-test /tmp/anchor/submission_anchor.csv --family lgb --treatment identity_screen --rounds 900 --out-dir results ;;
+            xgb) python experiments/frontier_contrast_campaign.py --data-dir /tmp/s6e8 --anchor-oof /tmp/anchor/oof_anchor.csv --anchor-test /tmp/anchor/submission_anchor.csv --family xgb --treatment identity_screen --rounds 1500 --out-dir results ;;
+          esac
+      - uses: actions/upload-artifact@v4
+        with: {name: 'graph-contrast-${{ matrix.family }}', path: results, retention-days: 7}
+
+  winner:
+    if: github.head_ref == 'agent/generator-graph-winner'
+    needs: contrast
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with: {python-version: '3.11'}
+      - run: pip install -e .
+      - uses: actions/download-artifact@v4
+        with: {name: graph-quad-anchor, path: /tmp/anchor}
+      - uses: actions/download-artifact@v4
+        with: {name: graph-contrast-lgb, path: /tmp/lgb}
+      - uses: actions/download-artifact@v4
+        with: {name: graph-contrast-xgb, path: /tmp/xgb}
+      - name: Materialize current nested frontier winner
+        run: |
+          python scripts/compose_frontier_winner.py \
+            --anchor-oof /tmp/anchor/oof_anchor.csv \
+            --anchor-test /tmp/anchor/submission_anchor.csv \
+            --lgb-dir /tmp/lgb --xgb-dir /tmp/xgb --out-dir results
+      - uses: actions/upload-artifact@v4
+        with: {name: graph-current-winner, path: results, retention-days: 7}
+
+  generator-graph:
+    if: github.head_ref == 'agent/generator-graph-winner'
+    needs: winner
+    runs-on: ubuntu-latest
+    timeout-minutes: 180
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with: {python-version: '3.11', cache: pip}
+      - run: pip install -e '.[dev]'
+      - run: |
+          git clone --depth 1 https://github.com/s23010843/Predicting-Smartphone-Addiction.git /tmp/datarepo
+          mkdir -p /tmp/s6e8
+          cp /tmp/datarepo/input/{train.csv,test.csv,sample_submission.csv} /tmp/s6e8/
+      - uses: actions/download-artifact@v4
+        with: {name: graph-current-winner, path: /tmp/winner}
+      - name: Price latent generator graph against current winner
+        run: |
+          python experiments/generator_graph_frontier.py \
+            --data-dir /tmp/s6e8 \
+            --anchor-oof /tmp/winner/oof_frontier_winner.csv \
+            --anchor-test /tmp/winner/submission_frontier_winner.csv \
+            --anchor-oof-col frontier_winner \
+            --smoothing 10 --min-support 2 \
+            --out-dir results
+      - name: Print structural decision
+        run: cat results/decision.json
+      - uses: actions/upload-artifact@v4
+        with: {name: generator-graph-candidate, path: results, retention-days: 14}
