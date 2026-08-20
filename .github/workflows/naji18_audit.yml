@@ -1,0 +1,59 @@
+name: naji-public-blend-frontier-audit
+
+on:
+  pull_request:
+    branches: [main]
+    paths:
+      - .github/workflows/naji18_audit.yml
+
+permissions:
+  contents: read
+
+jobs:
+  audit:
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - run: pip install kagglehub numpy pandas scikit-learn scipy
+      - name: Download labels and audit every public blend
+        run: |
+          mkdir -p data artifacts/naji_frontier
+          curl -fL --retry 5 https://raw.githubusercontent.com/s23010843/Predicting-Smartphone-Addiction/main/input/train.csv -o data/train.csv
+          curl -fL --retry 5 https://raw.githubusercontent.com/s23010843/Predicting-Smartphone-Addiction/main/input/test.csv -o data/test.csv
+          python - <<'PY'
+          import json,re,shutil
+          from pathlib import Path
+          import numpy as np,pandas as pd,kagglehub
+          from sklearn.metrics import roc_auc_score
+          root=Path(kagglehub.dataset_download('najiama/predicting-smartphone-addiction-oof-submission-csv'))
+          tr=pd.read_csv('data/train.csv',usecols=['id','addicted_label']);te=pd.read_csv('data/test.csv',usecols=['id']);y=tr.addicted_label.to_numpy(int)
+          rows=[];pairs=[]
+          for p in sorted(root.rglob('*oof_predictions.csv')):
+              m=re.match(r'(\d+)(?:_blend)?_oof_predictions\.csv$',p.name)
+              if not m:continue
+              version=int(m.group(1));o=pd.read_csv(p)
+              if len(o)!=len(tr) or 'id' not in o or not np.array_equal(o.id.to_numpy(),tr.id.to_numpy()):continue
+              pred_cols=[c for c in o.columns if c!='id' and pd.api.types.is_numeric_dtype(o[c])]
+              if len(pred_cols)!=1:continue
+              auc=float(roc_auc_score(y,o[pred_cols[0]].to_numpy(float)))
+              subs=list(root.glob(f'{version:02d}*_submission.csv'))+list(root.glob(f'{version:02d}*_submission.csv.csv'))
+              sub=None
+              for q in subs:
+                  s=pd.read_csv(q)
+                  if len(s)==len(te) and 'id' in s and np.array_equal(s.id.to_numpy(),te.id.to_numpy()):sub=q;break
+              rows.append({'version':version,'oof_file':p.name,'prediction_column':pred_cols[0],'oof_auc':auc,'submission_file':sub.name if sub else None})
+              if sub:pairs.append((version,auc,p,sub))
+          rows.sort(key=lambda z:z['version']);best=max(pairs,key=lambda z:z[1]);version,auc,oofp,subp=best
+          out=Path('artifacts/naji_frontier');shutil.copy2(oofp,out/'best_oof.csv');shutil.copy2(subp,out/'best_submission.csv');pd.DataFrame(rows).to_csv(out/'lineage.csv',index=False)
+          summary={'source':'najiama/predicting-smartphone-addiction-oof-submission-csv','lineage':rows,'best_by_oof':{'version':version,'oof_auc':auc,'oof_file':oofp.name,'submission_file':subp.name}}
+          (out/'summary.json').write_text(json.dumps(summary,indent=2)+'\n');print(json.dumps(summary,indent=2))
+          PY
+      - uses: actions/upload-artifact@v4
+        with:
+          name: naji-public-blend-frontier-audit
+          path: artifacts/naji_frontier
+          retention-days: 7

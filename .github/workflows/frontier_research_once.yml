@@ -1,0 +1,21 @@
+name: frontier-097-research-once-disabled
+
+on:
+  push:
+    branches:
+      - agent/frontier-097-campaign
+    paths:
+      - .github/workflows/frontier_research_once.yml
+
+permissions:
+  contents: read
+
+concurrency:
+  group: frontier-097-research-once
+  cancel-in-progress: true
+
+jobs:
+  disabled:
+    runs-on: ubuntu-latest
+    steps:
+      - run: echo "Research execution moved into the branch-gated tests workflow."
