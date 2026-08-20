@@ -1,0 +1,71 @@
+name: Build 0.97134 challenger probe
+
+on:
+  push:
+    branches: [agent/beat-097134]
+    paths:
+      - .github/workflows/build_beat_097134_probe.yml
+      - scripts/build_v19_xgb_residual_probe.py
+  workflow_dispatch:
+
+permissions:
+  contents: write
+  actions: read
+
+concurrency:
+  group: beat-097134-probe
+  cancel-in-progress: true
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: agent/beat-097134
+          fetch-depth: 1
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - run: python -m pip install --disable-pip-version-check numpy pandas scipy
+
+      - name: Recover XGBoost matched residual artifact
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          mkdir -p /tmp/xgb
+          curl --fail --location --silent --show-error \
+            -H "Authorization: Bearer ${GITHUB_TOKEN}" \
+            -H "Accept: application/vnd.github+json" \
+            "https://api.github.com/repos/${GITHUB_REPOSITORY}/actions/artifacts/9346483012/zip" \
+            -o /tmp/xgb.zip
+          unzip -q /tmp/xgb.zip -d /tmp/xgb
+          find /tmp/xgb -type f -maxdepth 3 -print
+          DIRECTION="$(find /tmp/xgb -name direction_test.npy -print -quit)"
+          test -n "$DIRECTION"
+          cp "$DIRECTION" /tmp/direction_test.npy
+
+      - name: Build highest-EV immediate residual probe
+        run: |
+          python scripts/build_v19_xgb_residual_probe.py \
+            --anchor kaggle/submission_nomophobia_v19_lgb015.csv \
+            --direction /tmp/direction_test.npy \
+            --weight 0.10 \
+            --out kaggle/next/submission_06_v19_xgb_residual010.csv
+          cat kaggle/next/submission_06_v19_xgb_residual010.json
+
+      - name: Commit validated submission
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add -f kaggle/next/submission_06_v19_xgb_residual010.csv kaggle/next/submission_06_v19_xgb_residual010.json
+          if git diff --cached --quiet; then
+            echo "candidate already current"
+          else
+            git commit -m "Add 0.97134 challenger XGB residual submission"
+            git push origin HEAD:agent/beat-097134
+          fi
