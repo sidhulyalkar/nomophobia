@@ -1,0 +1,65 @@
+name: pairwise-auc-champion-residual
+
+on:
+  workflow_dispatch:
+  pull_request:
+    branches: [main]
+    paths:
+      - "src/s6e8/pairwise_auc.py"
+      - "experiments/pairwise_auc_residual_campaign.py"
+      - "tests/test_pairwise_auc.py"
+      - ".github/workflows/pairwise_auc_compute.yml"
+
+permissions:
+  contents: read
+  actions: read
+
+jobs:
+  pairwise-residual:
+    runs-on: ubuntu-latest
+    timeout-minutes: 120
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: pip
+      - run: pip install -e .
+      - name: Acquire public competition mirror
+        run: |
+          git clone --depth 1 https://github.com/s23010843/Predicting-Smartphone-Addiction.git /tmp/datarepo
+          mkdir -p /tmp/s6e8
+          cp /tmp/datarepo/input/{train.csv,test.csv,sample_submission.csv} /tmp/s6e8/
+      - name: Reuse audited v19 OOF and test predictions
+        uses: actions/download-artifact@v4
+        with:
+          name: naji-public-blend-frontier-audit
+          path: /tmp/naji
+          github-token: ${{ github.token }}
+          repository: sidhulyalkar/nomophobia
+          run-id: 32192372800
+      - name: Reuse measured LGB residual direction and folds
+        uses: actions/download-artifact@v4
+        with:
+          name: contrast-lgb
+          path: /tmp/lgb
+          github-token: ${{ github.token }}
+          repository: sidhulyalkar/nomophobia
+          run-id: 32194910518
+      - name: Run champion-error pairwise AUC campaign
+        run: |
+          python experiments/pairwise_auc_residual_campaign.py \
+            --data-dir /tmp/s6e8 \
+            --v19-oof /tmp/naji/best_oof.csv \
+            --v19-test /tmp/naji/best_submission.csv \
+            --lgb-direction-dir /tmp/lgb \
+            --lgb-weight 0.015 \
+            --max-pairs 210000 \
+            --ranker-alpha 0.0001 \
+            --ranker-iterations 50 \
+            --out-dir results
+      - uses: actions/upload-artifact@v4
+        with:
+          name: pairwise-auc-residual
+          path: results
+          retention-days: 7

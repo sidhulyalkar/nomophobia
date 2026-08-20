@@ -1,0 +1,40 @@
+{
+  "name": "pairwise_low_tail_specialist_v1",
+  "status": "accepted_challenger_pending_leaderboard",
+  "incumbent": {
+    "recipe": "rank(rank(v19_public_anchor) + 0.015 * lgb_identity_screen_direction)",
+    "oof_auc": 0.9701014001897124,
+    "public_leaderboard_observed": 0.97113
+  },
+  "candidate": {
+    "recipe": "apply pairwise orthogonal correction only to the bottom 30% of incumbent ranks",
+    "rank_cutoff": 0.3,
+    "coefficient": -0.0025,
+    "honest_nested_oof_auc": 0.970103396510279,
+    "honest_nested_gain": 0.0000019963205666,
+    "deploy_oof_auc": 0.9701036395944417,
+    "deploy_gain": 0.0000022394047293,
+    "fold_wins": 5,
+    "worst_fold_delta": 0.0000006236427581,
+    "even_id_delta": 0.0000029212803407,
+    "odd_id_delta": 0.0000015280890261,
+    "structural_gate": "PASS"
+  },
+  "submission": {
+    "filename": "submission_pairwise_specialist.csv",
+    "rows": 296302,
+    "unique_predictions": 295953,
+    "sha256": "52bf9b745dc2167f1a0b73646a1a2ccecf331f0af073daa013e87bb4bdb967ac",
+    "workflow_run": 32301484757,
+    "artifact_id": 9383195740,
+    "artifact_name": "pairwise-specialist-final"
+  },
+  "validation": {
+    "selector": "rotating outer-fold first-passing specialist gate",
+    "candidate_cutoffs": [0.3, 0.4, 0.5, 0.6, 0.7],
+    "candidate_magnitudes": [0.00025, 0.0005, 0.001, 0.0025, 0.005, 0.0075, 0.01],
+    "sign_order": [1, -1],
+    "selection_order": "cutoff_then_magnitude_then_sign",
+    "selection_uses_held_fold": false
+  }
+}
