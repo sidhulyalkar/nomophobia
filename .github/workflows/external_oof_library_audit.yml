@@ -1,0 +1,104 @@
+name: external-oof-library-audit
+
+on:
+  pull_request:
+    branches: [main]
+    paths:
+      - .github/workflows/external_oof_library_audit.yml
+
+permissions:
+  contents: read
+
+jobs:
+  audit:
+    runs-on: ubuntu-latest
+    timeout-minutes: 90
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+          cache: pip
+      - name: Install dependencies
+        run: pip install kagglehub numpy pandas scipy scikit-learn
+      - name: Download competition mirror
+        run: |
+          mkdir -p data
+          base=https://raw.githubusercontent.com/s23010843/Predicting-Smartphone-Addiction/main/input
+          curl -fL --retry 5 $base/train.csv -o data/train.csv
+          curl -fL --retry 5 $base/test.csv -o data/test.csv
+      - name: Audit NPY library and build robust rank blends
+        run: |
+          cat > /tmp/library.py <<'PY'
+          import json,re
+          from pathlib import Path
+          import numpy as np,pandas as pd,kagglehub
+          from scipy.stats import rankdata
+          from sklearn.metrics import roc_auc_score
+          from sklearn.model_selection import StratifiedKFold
+          from sklearn.linear_model import LogisticRegression
+          def rank01(x): return rankdata(np.asarray(x),method='average')/len(x)
+          def fold_rank01(x,folds):
+              out=np.empty(len(x),float)
+              for f in np.unique(folds):
+                  m=folds==f; out[m]=rankdata(np.asarray(x)[m],method='average')/m.sum()
+              return out
+          def norm(s):
+              s=re.sub(r'^(oof|test|pred|prediction)[_-]+','',s,flags=re.I)
+              s=re.sub(r'[_-]+(oof|test|pred|prediction)$','',s,flags=re.I)
+              return s
+          tr=pd.read_csv('data/train.csv');te=pd.read_csv('data/test.csv');y=tr.addicted_label.to_numpy(int);qids=te.id.to_numpy();ntr=len(tr);nte=len(te)
+          root=Path(kagglehub.dataset_download('szymonkapiski/s6e8-oof-library-47-models'));print('ROOT',root)
+          if (root/'manifest.csv').exists():
+              m=pd.read_csv(root/'manifest.csv');print('MANIFEST',list(m.columns));print(m.head(100).to_string(index=False))
+          paths=sorted([p for p in root.rglob('*') if p.is_file()]);print('FILES',[(str(p.relative_to(root)),p.stat().st_size) for p in paths])
+          train={};test={};folds_found=[]
+          for p in root.rglob('*.npy'):
+              try:a=np.load(p,allow_pickle=False)
+              except Exception:continue
+              if a.ndim!=1 or not np.issubdtype(a.dtype,np.number) or not np.isfinite(a).all():continue
+              key=norm(p.stem);low=p.stem.lower()
+              if len(a)==ntr:
+                  if 'fold' in low:folds_found.append((p.stem,a));continue
+                  train[key]=(a,p)
+              elif len(a)==nte:test[key]=(a,p)
+          common=sorted(set(train)&set(test))
+          if not common:
+              for kt,(a,pt) in list(train.items()):
+                  for kq,(b,pq) in list(test.items()):
+                      if kt in kq or kq in kt:
+                          k=kt if len(kt)>=len(kq) else kq;train[k]=(a,pt);test[k]=(b,pq)
+              common=sorted(set(train)&set(test))
+          if not common:raise RuntimeError(f'No pairs; train={list(train)[:100]} test={list(test)[:100]}')
+          auc={c:float(roc_auc_score(y,train[c][0])) for c in common};order=sorted(common,key=lambda c:auc[c],reverse=True)
+          kept=[];rr={}
+          for c in order:
+              r=rank01(train[c][0]);rr[c]=r
+              if any(np.corrcoef(r,rr[k])[0,1]>=.9995 for k in kept):continue
+              kept.append(c)
+          if folds_found:folds=np.asarray(folds_found[0][1]);fold_source=folds_found[0][0]
+          else:
+              folds=np.empty(len(y),np.int8);sk=StratifiedKFold(5,shuffle=True,random_state=20260818)
+              for f,(_,vi) in enumerate(sk.split(np.zeros(len(y)),y)):folds[vi]=f
+              fold_source='generated_meta_diagnostic'
+          O=np.column_stack([fold_rank01(train[c][0],folds) for c in kept]);T=np.column_stack([rank01(test[c][0]) for c in kept])
+          eq=[]
+          for k in sorted(set(x for x in [2,3,5,8,10,15,20,30,len(kept)] if x<=len(kept))):eq.append({'k':k,'auc':float(roc_auc_score(y,O[:,:k].mean(1)))})
+          poof=np.zeros(len(y));co=[];fa=[]
+          for h in np.unique(folds):
+              a=folds!=h;b=~a;lr=LogisticRegression(C=.03,solver='lbfgs',max_iter=1000);lr.fit(O[a],y[a]);poof[b]=lr.decision_function(O[b]);co.append(lr.coef_[0]);fa.append(float(roc_auc_score(y[b],poof[b])))
+          mc=np.mean(co,0);pos=np.maximum(mc,0);pos/=pos.sum();out=Path('artifacts/external_library');out.mkdir(parents=True,exist_ok=True)
+          fixed=O@pos;fixed_test=T@pos;best=max(eq,key=lambda z:z['auc']);k=best['k']
+          pd.DataFrame({'id':qids,'addicted_label':rank01(fixed_test)}).to_csv(out/'submission_positive_ranklogit.csv',index=False)
+          pd.DataFrame({'id':qids,'addicted_label':rank01(T@mc)}).to_csv(out/'submission_signed_ranklogit_diagnostic.csv',index=False)
+          pd.DataFrame({'id':qids,'addicted_label':rank01(T[:,:k].mean(1))}).to_csv(out/'submission_equal_topk.csv',index=False)
+          w=pd.DataFrame({'model':kept,'solo_auc':[auc[c] for c in kept],'mean_logit_coef':mc,'positive_weight':pos});w.to_csv(out/'weights.csv',index=False)
+          s={'n_input':len(common),'n_kept':len(kept),'fold_source':fold_source,'top_models':[{'model':c,'auc':auc[c]} for c in kept[:30]],'equal_topk_curve':eq,'ranklogit_crossfit_auc':float(roc_auc_score(y,poof)),'ranklogit_fold_auc':fa,'positive_fixed_auc':float(roc_auc_score(y,fixed)),'signed_fixed_auc_diagnostic':float(roc_auc_score(y,O@mc)),'best_equal':best,'top_weights':w.reindex(w.positive_weight.abs().sort_values(ascending=False).index).head(30).to_dict('records')}
+          (out/'summary.json').write_text(json.dumps(s,indent=2)+'\n');print('SUMMARY',json.dumps(s,indent=2))
+          PY
+          python /tmp/library.py
+      - uses: actions/upload-artifact@v4
+        with:
+          name: external-oof-library-audit
+          path: artifacts/external_library
+          retention-days: 7
